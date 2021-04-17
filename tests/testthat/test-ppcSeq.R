@@ -29,3 +29,17 @@ test_that("first test",{
 
 
 
+# Y = sccomp::cell_counts %>%
+#   select(sample, count, cell_type) %>%
+#   spread(cell_type, count) %>%
+#   tidybulk::as_matrix(rownames = sample)
+#
+# X = sccomp::cell_counts %>%
+#   select(sample, count, cell_type, type) %>%
+#   spread(cell_type, count) %>%
+#   select(type) %>%
+#   mutate(type = as.integer(type)-1) %>%
+#   tidybulk::as_matrix()
+#
+#
+# MGLMreg(Y~X, dist="NegMN", LRT=FALSE)

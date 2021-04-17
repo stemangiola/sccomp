@@ -95,6 +95,8 @@ sccomp_glm = function(.data,
 	  .data_parsed %>%
 	  count_in_beta_out_no_missing_data(!!.count, formula, X, exposure, iteration = 1, chains = 4)
 
+	# I have to fix many models with the generated quantities
+	# of the censored data as for multinomial all counts are not independent
 	.data_parsed_2 =
 	  .data_parsed_1 %>%
 	  select(-contains("posterior")) %>%
