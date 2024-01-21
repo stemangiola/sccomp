@@ -79,6 +79,22 @@ functions{
     return(lp);
   }
 
+  real partial_sum_lpmf(int[] slice_y,
+                        int start,
+                        int end,
+                        int[] exposure_array,
+                        vector mu_array,
+                        vector precision_array
+                        ) {
+
+return beta_binomial_lupmf(
+    slice_y |
+    exposure_array[start:end],
+    (mu_array[start:end] .* precision_array[start:end]),
+    (1.0 - mu_array[start:end]) .* precision_array[start:end]
+  ) ;
+
+}
 }
 data{
   int<lower=1> N;
@@ -129,6 +145,7 @@ data{
   int<lower=0, upper=1> enable_loo;
 }
 transformed data{
+  int<lower=1> grainsize = 1;    // Parallel chain
   vector[2*M] Q_r = Q_sum_to_zero_QR(M);
   real x_raw_sigma = inv_sqrt(1 - inv(M));
   matrix[N, C] Q_ast;
@@ -244,12 +261,21 @@ model{
 
   // Fit main distribution
   if(use_data == 1){
-    target += beta_binomial_lpmf(
-      y_array[truncation_not_idx] |
+    // target += beta_binomial_lpmf(
+    //   y_array[truncation_not_idx] |
+    //   exposure_array[truncation_not_idx],
+    //   (mu_array[truncation_not_idx] .* precision_array[truncation_not_idx]),
+    //   ((1.0 - mu_array[truncation_not_idx]) .* precision_array[truncation_not_idx])
+    //   ) ;
+      
+    target +=  reduce_sum(
+      partial_sum_lupmf,
+      y_array[truncation_not_idx],
+      grainsize,
       exposure_array[truncation_not_idx],
-      (mu_array[truncation_not_idx] .* precision_array[truncation_not_idx]),
-      ((1.0 - mu_array[truncation_not_idx]) .* precision_array[truncation_not_idx])
-      ) ;
+      mu_array[truncation_not_idx],
+      precision_array[truncation_not_idx]
+    );
   }
 
   // Priors

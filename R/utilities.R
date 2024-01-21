@@ -456,6 +456,7 @@ label_deleterious_outliers = function(.my_data){
 
 }
 
+#' @importFrom rstan rstan_options
 fit_model = function(
   data_for_model, model, censoring_iteration = 1, cores = detectCores(), quantile = 0.95,
   warmup_samples = 300, approximate_posterior_inference = TRUE, verbose = FALSE,
@@ -487,12 +488,13 @@ fit_model = function(
 
   # Find optimal number of chains
   if(is.null(chains))
-    chains =
-      find_optimal_number_of_chains(
-        how_many_posterior_draws = output_samples,
-        warmup = warmup_samples
-      ) %>%
-      min(cores)
+    # chains =
+    #   find_optimal_number_of_chains(
+    #     how_many_posterior_draws = output_samples,
+    #     warmup = warmup_samples
+    #   ) %>%
+    #   min(cores)
+    chains=3
 
   init_list=list(
     prec_coeff = c(5,0),
@@ -504,6 +506,8 @@ fit_model = function(
   init = map(1:chains, ~ init_list) %>%
     setNames(as.character(1:chains))
 
+  rstan_options(threads_per_chain = ceiling(cores/chains))
+  
   # Fit
   if(!approximate_posterior_inference)
     sampling(

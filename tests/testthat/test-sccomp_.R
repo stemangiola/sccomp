@@ -6,6 +6,8 @@ data("counts_obj")
 
 set.seed(42)
 
+my_cores = 10
+
 my_estimate = 
   seurat_obj |>
   sccomp_estimate(
@@ -13,7 +15,7 @@ my_estimate =
     formula_variability = ~ 1,
     sample, cell_group,
     approximate_posterior_inference = FALSE,
-    cores = 1,
+    cores = my_cores,
     mcmc_seed = 42,
     max_sampling_iterations = 1000
   )
@@ -28,7 +30,7 @@ my_estimate_no_intercept =
     formula_variability = ~ 1,
     sample, cell_group,
     approximate_posterior_inference = FALSE,
-    cores = 1,
+    cores = my_cores,
     mcmc_seed = 42,
     max_sampling_iterations = 1000
   )
@@ -40,7 +42,7 @@ my_estimate_random =
     formula_variability = ~ 1,
     sample, cell_group,
     approximate_posterior_inference = FALSE,
-    cores = 1,
+    cores = my_cores,
     mcmc_seed = 42,     
     max_sampling_iterations = 1000
   )
@@ -121,7 +123,7 @@ test_that("outliers",{
   
 
   my_estimate |>
-    sccomp_remove_outliers(cores = 1, max_sampling_iterations = 1000)
+    sccomp_remove_outliers(cores = my_cores, max_sampling_iterations = 1000)
   
 })
 
@@ -135,7 +137,7 @@ test_that("multilevel multi beta binomial from Seurat",{
       formula_variability = ~ 1,
       sample, cell_group,
       #approximate_posterior_inference = "all",
-      cores = 1,
+      cores = my_cores,
       mcmc_seed = 42,     
       max_sampling_iterations = 1000
     )
@@ -163,7 +165,7 @@ test_that("multilevel multi beta binomial from Seurat",{
       formula_variability = ~ 1,
       sample, cell_group,
       #approximate_posterior_inference = "all",
-      cores = 1,
+      cores = my_cores,
       mcmc_seed = 42,    
       max_sampling_iterations = 1000
     )
@@ -194,7 +196,7 @@ test_that("multilevel multi beta binomial from Seurat with intercept and continu
       formula_variability = ~ 1,
       sample, cell_group,
       #approximate_posterior_inference = "all",
-      cores = 1,
+      cores = my_cores,
       mcmc_seed = 42,   
       max_sampling_iterations = 1000
     )
@@ -240,7 +242,7 @@ test_that("multilevel multi beta binomial from Seurat with intercept and continu
 #           sample, cell_group,
 #           approximate_posterior_inference = "all",
 #           contrasts = c("typecancer - typehealthy", "typehealthy - typecancer"),
-#           cores = 1,
+#           cores = my_cores,
 #           mcmc_seed = 42,       max_sampling_iterations = 1000
 #         ) ,
 #       regexp = "should not be shared"
@@ -285,7 +287,7 @@ test_that("remove unwanted variation",{
       formula_variability = ~ 1,
       sample, cell_group,
       approximate_posterior_inference = "all",
-      cores = 1,
+      cores = my_cores,
       mcmc_seed = 42,    
       max_sampling_iterations = 1000
     )
@@ -305,7 +307,7 @@ test_that("multi beta binomial from SCE",{
       sample,
       cell_group,
       approximate_posterior_inference = "all",
-      cores = 1,
+      cores = my_cores,
       mcmc_seed = 42,      
       max_sampling_iterations = 1000
     )
@@ -332,7 +334,7 @@ res_composition =
     sample,
     cell_group,
     approximate_posterior_inference = "all",
-    cores = 1,
+    cores = my_cores,
     mcmc_seed = 42,   
     max_sampling_iterations = 1000
   )
@@ -345,7 +347,7 @@ res_composition_variability =
     sample,
     cell_group,
     approximate_posterior_inference = "all",
-    cores = 1,
+    cores = my_cores,
     mcmc_seed = 42,    
     max_sampling_iterations = 1000
   )

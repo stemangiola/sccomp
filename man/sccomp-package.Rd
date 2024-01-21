@@ -11,3 +11,15 @@ A DESCRIPTION OF THE PACKAGE
 \references{
 Stan Development Team (2020). RStan: the R interface to Stan. R package version 2.21.2. https://mc-stan.org
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/stemangiola/sccomp}
+  \item Report bugs at \url{https://github.com/stemangiola/sccomp/issues}
+}
+
+}
+\author{
+\strong{Maintainer}: Stefano Mangiola \email{mangiolastefano@gmail.com}
+
+}
