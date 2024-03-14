@@ -9,7 +9,8 @@ sccomp_predict(
   formula_composition = NULL,
   new_data = NULL,
   number_of_draws = 500,
-  mcmc_seed = sample(1e+05, 1)
+  mcmc_seed = sample(1e+05, 1),
+  summary_instead_of_draws = TRUE
 )
 }
 \arguments{
@@ -22,6 +23,8 @@ sccomp_predict(
 \item{number_of_draws}{An integer. How may copies of the data you want to draw from the model joint posterior distribution.}
 
 \item{mcmc_seed}{An integer. Used for Markov-chain Monte Carlo reproducibility. By default a random number is sampled from 1 to 999999. This itself can be controlled by set.seed()}
+
+\item{summary_instead_of_draws}{Return the summary values (i.e. mean and quantiles) of the predicted proportions, or return single draws. Single draws can be helful to better analyse the uncertainty of the prediction.}
 }
 \value{
 A nested tibble \code{tbl} with cell_group-wise statistics

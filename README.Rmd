@@ -23,6 +23,10 @@ status](https://github.com/stemangiola/tidyseurat/workflows/R-CMD-check/badge.sv
 knitr::opts_chunk$set( fig.path = "inst/figures/")
 ```
 
+### PNAS article
+
+Mangiola, Stefano, Alexandra J. Roth-Schulze, Marie Trussart, Enrique Zozaya-Valdés, Mengyao Ma, Zijie Gao, Alan F. Rubin, Terence P. Speed, Heejung Shim, and Anthony T. Papenfuss. 2023. “Sccomp: Robust Differential Composition and Variability Analysis for Single-Cell Data.” Proceedings of the National Academy of Sciences of the United States of America 120 (33): e2203828120. https://doi.org/10.1073/pnas.2203828120
+
 ```{r child="man/fragments/intro.Rmd"}
 ```
 
