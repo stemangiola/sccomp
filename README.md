@@ -73,30 +73,24 @@ model for composition.
 
 ## Binary factor
 
-### From Seurat, SingleCellExperiment, metadata objects
+### From proportions
+
+If counts are available we strongly discourage the use of proportions,
+as an important source of uncertainty (i.e. for rare groups/cell-types)
+is not modeled.
+
+Proportions should be bigger than 0. Assuming that 0s derive from a
+precision threshold (e.g. deconvolution), 0s are converted to the
+smaller non 0 value.
 
 ``` r
-single_cell_object |>
-  sccomp_estimate( 
-    formula_composition = ~ type, 
-    .sample =  sample, 
-    .cell_group = cell_group, 
-    bimodal_mean_variability_association = TRUE,
-    cores = 1 
-  ) |> 
-  sccomp_remove_outliers() |> 
-    sccomp_test(test_composition_above_logit_fold_change = 0.2)
-```
-
-### From counts
-
-``` r
-counts_obj |>
+res = 
+  counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ type, 
     .sample = sample,
     .cell_group = cell_group,
-    .count = count, 
+    .count = proportion, 
     bimodal_mean_variability_association = TRUE,
     cores = 1,
     verbose = FALSE
@@ -118,10 +112,91 @@ counts_obj |>
     ##  8 BM         typecancer  type   -0.548    -0.203  0.160  0.49   0.138       NaN
     ##  9 CD4 1      (Intercept) <NA>    0.126     0.310  0.509  0.128  0.0206      NaN
     ## 10 CD4 1      typecancer  type   -0.0734    0.176  0.453  0.571  0.169       NaN
+
     ## # ℹ 62 more rows
     ## # ℹ 9 more variables: c_R_k_hat <dbl>, v_lower <dbl>, v_effect <dbl>,
     ## #   v_upper <dbl>, v_pH0 <dbl>, v_FDR <dbl>, v_n_eff <dbl>, v_R_k_hat <dbl>,
     ## #   count_data <list>
+
+# Visualisation
+
+## Summary plots
+
+``` r
+plots = plot(res) 
+```
+
+    ## Joining with `by = join_by(cell_group, sample)`
+    ## Joining with `by = join_by(cell_group, type)`
+
+### Visualise the descriptive adequacy of the model
+
+A plot of group proportion, faceted by groups. The blue boxplots
+represent the posterior predictive check. If the model is likely to be
+descriptively adequate to the data, the blue box plot should roughly
+overlay with the black box plot, which represents the observed data. The
+outliers are coloured in red. A box plot will be returned for every
+(discrete) covariate present in `formula_composition`. The colour coding
+represents the significant associations for composition and/or
+variability.
+
+``` r
+plots$boxplot
+```
+
+    ## [[1]]
+
+![](inst/figures/unnamed-chunk-10-1.png)<!-- -->
+
+### Mean/variability association
+
+Plot 2D significance plot. Data points are cell groups. Error bars are
+the 95% credible interval. The dashed lines represent the default
+threshold fold change for which the probabilities (c_pH0, v_pH0) are
+calculated. pH0 of 0 represent the rejection of the null hypothesis that
+no effect is observed.
+
+This plot is provided only if differential variability has been tested.
+The differential variability estimates are reliable only if the linear
+association between mean and variability for `(intercept)` (left-hand
+side facet) is satisfied. A scatterplot (besides the Intercept) is
+provided for each category of interest. The for each category of
+interest, the composition and variability effects should be generally
+uncorrelated.
+
+``` r
+plots$credible_intervals_2D
+```
+
+![](inst/figures/unnamed-chunk-11-1.png)<!-- -->
+
+### Effects significance
+
+A plot of estimates of differential composition (c\_) on the x-axis and
+differential variability (v\_) on the y-axis. The error bars represent
+95% credible intervals. The dashed lines represent the minimal effect
+that the hypothesis test is based on. An effect is labelled as
+significant if bigger than the minimal effect according to the 95%
+credible interval. Facets represent the covariates in the model.
+
+``` r
+plots$credible_intervals_1D
+```
+
+![](inst/figures/unnamed-chunk-12-1.png)<!-- -->
+
+## Visualisation of the MCMC chains from the posterior distribution
+
+It is possible to directly evaluate the posterior distribution. In this
+example, we plot the Monte Carlo chain for the slope parameter of the
+first cell type. We can see that it has converged and is negative with
+probability 1.
+
+``` r
+res %>% attr("fit") %>% rstan::traceplot("beta[2,1]")
+```
+
+![](inst/figures/unnamed-chunk-13-1.png)<!-- -->
 
 Of the output table, the estimate columns start with the prefix `c_`
 indicate `composition`, or with `v_` indicate `variability` (when
@@ -130,11 +205,12 @@ formula_variability is set).
 ## Contrasts
 
 ``` r
-seurat_obj |>
+counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ 0 + type, 
     .sample = sample,
     .cell_group = cell_group, 
+    .count = proportion,
     bimodal_mean_variability_association = TRUE,
     cores = 1 ,
     verbose = FALSE
@@ -164,6 +240,7 @@ seurat_obj |>
     ## #   v_upper <dbl>, v_pH0 <dbl>, v_FDR <dbl>, v_n_eff <dbl>, v_R_k_hat <dbl>,
     ## #   count_data <list>
 
+
 ## Categorical factor (e.g. Bayesian ANOVA)
 
 This is achieved through model comparison with `loo`. In the following
@@ -184,29 +261,33 @@ library(loo)
 
 # Fit first model
 model_with_factor_association = 
-  seurat_obj |>
+  counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ type, 
     .sample =  sample, 
     .cell_group = cell_group, 
+    .count = proportion,
     bimodal_mean_variability_association = TRUE,
     cores = 1, 
     enable_loo = TRUE, # Needed for model comparison and ANOVA
     verbose = FALSE
   )
 
+
 # Fit second model
 model_without_association = 
-  seurat_obj |>
+  counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ 1, 
     .sample =  sample, 
     .cell_group = cell_group, 
+    .count = proportion,
     bimodal_mean_variability_association = TRUE,
     cores = 1 , 
     enable_loo = TRUE, # Needed for model comparison and ANOVA
     verbose = FALSE
   )
+
 
 # Compare models
 loo_compare(
@@ -225,13 +306,13 @@ We can model the cell-group variability also dependent on the type, and
 so test differences in variability
 
 ``` r
-res = 
-  seurat_obj |>
+  counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ type, 
     formula_variability = ~ type,
     .sample = sample,
     .cell_group = cell_group,
+    .count = proportion,
     bimodal_mean_variability_association = TRUE,
     cores = 1 ,
     verbose = FALSE
@@ -260,6 +341,7 @@ res
     ##  9 CD4 cm rib… (Interce… <NA>     0.198    0.566  0.950  0.0260  3.05e-3     NaN
     ## 10 CD4 cm rib… typeheal… type    -2.35    -1.87  -1.36   0       0           NaN
     ## # ℹ 50 more rows
+
     ## # ℹ 9 more variables: c_R_k_hat <dbl>, v_lower <dbl>, v_effect <dbl>,
     ## #   v_upper <dbl>, v_pH0 <dbl>, v_FDR <dbl>, v_n_eff <dbl>, v_R_k_hat <dbl>,
     ## #   count_data <list>
@@ -276,6 +358,7 @@ plots\$credible_intervals_2D (see below).
 
 We recommend setting `bimodal_mean_variability_association  = FALSE`
 (Default).
+
 
 # Visualisation
 
@@ -413,6 +496,7 @@ res
     ## #   v_upper <dbl>, v_pH0 <dbl>, v_FDR <dbl>, v_n_eff <dbl>, v_R_k_hat <dbl>,
     ## #   count_data <list>
 
+
 # Removal of unwanted variation
 
 After you model your dataset, you can remove the unwanted variation from
@@ -449,4 +533,3 @@ res |> sccomp_remove_unwanted_variation(~type)
 The new tidy framework was introduced in 2024, two, understand the
 differences and improvements. Compared to the old framework, please read
 this [blog
-post](https://tidyomics.github.io/tidyomicsBlog/post/2023-12-07-tidy-sccomp/).
