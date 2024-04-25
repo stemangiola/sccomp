@@ -43,7 +43,7 @@ my_estimate_no_intercept =
 my_estimate_random = 
   seurat_obj |>
   sccomp_estimate(
-    formula_composition = ~ 0 + type + (type | group__),
+    formula_composition = ~ 0 + type + (0 + type | group__),
     formula_variability = ~ 1,
     sample, cell_group,
     cores = 1,
@@ -285,18 +285,28 @@ test_that("multi beta binomial from Seurat",{
 
 })
 
+test_that("calculate residuals",{
+
+  my_estimate_random |> 
+    sccomp_calculate_residuals() |> 
+    pull(logit_residuals) |> 
+    max() |> 
+    expect_lt(1)
+  
+})
+
 test_that("remove unwanted variation",{
-
+  
   library(tidyseurat)
-
+  
   data =
     seurat_obj |>
-
+    
     # Add batch
     nest(data = -c(sample, type)) |>
     mutate(batch = rep(c(0,1), 10)) |>
     unnest(data)
-
+  
   # Estimate
   estimate =
     data |>
@@ -308,11 +318,12 @@ test_that("remove unwanted variation",{
       mcmc_seed = 42,    
       max_sampling_iterations = 1000
     )
-
+  
   estimate |>
     sccomp_remove_unwanted_variation(formula_composition = ~ type)
-
+  
 })
+
 
 test_that("multi beta binomial from SCE",{
 

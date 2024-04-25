@@ -1045,7 +1045,7 @@ sccomp_replicate.sccomp_tbl = function(fit,
 #' @param new_data A sample-wise data frame including the column that represent the factors in your formula. If you want to predict proportions for 10 samples, there should be 10 rows. T
 #' @param number_of_draws An integer. How may copies of the data you want to draw from the model joint posterior distribution.
 #' @param mcmc_seed An integer. Used for Markov-chain Monte Carlo reproducibility. By default a random number is sampled from 1 to 999999. This itself can be controlled by set.seed()
-#'
+#' @param summary_instead_of_draws Return the summary values (i.e. mean and quantiles) of the predicted proportions, or return single draws. Single draws can be helful to better analyse the uncertainty of the prediction.
 #' @return A nested tibble `tbl` with cell_group-wise statistics
 #'
 #' @export
@@ -1067,7 +1067,8 @@ sccomp_predict <- function(fit,
                            formula_composition = NULL,
                            new_data = NULL,
                            number_of_draws = 500,
-                           mcmc_seed = sample(1e5, 1)) {
+                           mcmc_seed = sample(1e5, 1),
+													 summary_instead_of_draws = TRUE) {
   UseMethod("sccomp_predict", fit)
 }
 
@@ -1077,7 +1078,8 @@ sccomp_predict.sccomp_tbl = function(fit,
                                      formula_composition = NULL,
                                      new_data = NULL,
                                      number_of_draws = 500,
-                                     mcmc_seed = sample(1e5, 1)){
+                                     mcmc_seed = sample(1e5, 1),
+																		 summary_instead_of_draws = TRUE){
 
 
   model_input = attr(fit, "model_input")
@@ -1096,31 +1098,35 @@ sccomp_predict.sccomp_tbl = function(fit,
 
   # New data
   if(new_data |> is.null())
-    sample_names =
-      fit |>
-      select(count_data) |>
-      unnest(count_data) |>
-      distinct(!!.sample) |> 
-      pull(!!.sample)
+  	new_data =
+	  	fit |>
+	  	select(count_data) |>
+	  	unnest(count_data) |> 
+	  	distinct()
   
   # If seurat
   else if(new_data |> is("Seurat")) 
-    sample_names = 
-      new_data[[]] |> 
-      distinct(!!.sample) |> 
-      pull(!!.sample)
+  	new_data = new_data[[]] 
   
-  # Just subset
-  else 
-    sample_names = 
-      new_data |> 
-      distinct(!!.sample) |> 
-      pull(!!.sample)
+  sample_names =
+  	new_data |>
+  	distinct(!!.sample) |> 
+  	pull(!!.sample)
   
   # mean generated
-  rng |>
-    summary_to_tibble("mu", "M", "N") |>
-    select(M, N, proportion_mean = mean, proportion_lower = `2.5%`, proportion_upper = `97.5%`) |>
+  if(summary_instead_of_draws)
+  	prediction_df = 
+	  	rng |>
+	    summary_to_tibble("mu", "M", "N") |>
+	    select(M, N, proportion_mean = mean, proportion_lower = `2.5%`, proportion_upper = `97.5%`) 
+  else
+  	prediction_df = 
+  	rng |>
+  	draws_to_tibble_x_y("mu", "M", "N") |> 
+  	select(M, N, proportion = .value, .draw) 
+  
+  prediction_df = 
+  	prediction_df |>
 
     # Get sample name
     nest(data = -N) %>%
@@ -1136,8 +1142,90 @@ sccomp_predict.sccomp_tbl = function(fit,
     select(-N, -M) |>
     select(!!.cell_group, !!.sample, everything())
 
+  new_data |> 
+  	left_join(prediction_df, by = join_by(!!.sample))
 }
 
+#' sccomp_calculate_residuals
+#'
+#' @description This function uses the model to remove unwanted variation from a dataset using the estimated of the model. For example if you fit your data with this formula `~ factor_1 + factor_2` and use this formula to remove unwanted variation `~ factor_1`, the `factor_2` will be factored out.
+#'
+#'
+#' @param .data A tibble. The result of sccomp_estimate.
+#' @param formula_composition A formula. The formula describing the model for differential abundance, for example ~treatment. This formula can be a sub-formula of your estimated model; in this case all other factor will be factored out.
+#' @param formula_variability A formula. The formula describing the model for differential variability, for example ~treatment. In most cases, if differentially variability is of interest, the formula should only include the factor of interest as a large anount of data is needed to define variability depending to each factors. This formula can be a sub-formula of your estimated model; in this case all other factor will be factored out.
+#'
+#' @return A nested tibble `tbl` with cell_group-wise statistics
+#'
+#' @export
+#'
+#' @examples
+#'
+#' data("counts_obj")
+#'
+#'   estimates = sccomp_estimate(
+#'   counts_obj ,
+#'    ~ type, ~1,  sample, cell_group, count,
+#'     approximate_posterior_inference = "all",
+#'     cores = 1
+#'   )
+#'
+#'   sccomp_calculate_residuals(estimates)
+#'
+sccomp_calculate_residuals <- function(.data) {
+  UseMethod("sccomp_calculate_residuals", .data)
+}
+
+#' @export
+#'
+sccomp_calculate_residuals.sccomp_tbl = function(.data){
+  
+  
+  
+  model_input = attr(.data, "model_input")
+  .sample = attr(.data, ".sample")
+  .cell_group = attr(.data, ".cell_group")
+  .grouping_for_random_intercept = attr(.data, ".grouping_for_random_intercept")
+  .count = attr(.data, ".count")
+  
+  # Residuals
+  .data |>
+    sccomp_predict( 
+      number_of_draws = 
+        .data |>
+        attr("fit") |>
+        dim() |>
+        _[1] |> 
+        min(500) 
+    ) |>
+    distinct(!!.sample, !!.cell_group, proportion_mean) |>
+    # mutate( proportion_mean =
+    #           proportion_mean |>
+    #           boot::logit()
+    # )|>
+    # Join counts
+    left_join(
+      .data |>
+        attr("model_input") %$%
+        y |>
+        as_tibble(rownames = quo_name(.sample)) |>
+        pivot_longer(-!!.sample, names_to = quo_name(.cell_group), values_to = quo_name(.count)) |>
+        with_groups(!!.sample,  ~ .x |> mutate(observed_proportion := !!.count / sum(!!.count ))) |>
+        
+        with_groups(!!.sample,  ~ .x |>  mutate(exposure := sum(!!.count))  ),
+      # |>
+      #   
+      #   mutate(observed_proportion =
+      #            observed_proportion |>
+      #            compress_zero_one() |>
+      #            boot::logit()
+      #   ),
+      by = c(quo_name(.sample), quo_name(.cell_group))
+    ) |>
+    mutate(residuals = observed_proportion - proportion_mean) |>
+    select(!!.sample, !!.cell_group, residuals, exposure)
+  
+}
 
 #' sccomp_remove_unwanted_variation
 #'
@@ -1184,43 +1272,9 @@ sccomp_remove_unwanted_variation.sccomp_tbl = function(.data,
   .grouping_for_random_intercept = attr(.data, ".grouping_for_random_intercept")
   .count = attr(.data, ".count")
 
-  fit_matrix = as.matrix(attr(.data, "fit") )
-
-  message("sccomp says: calculating residuals")
-
   # Residuals
-  residuals =
-    .data |>
-    sccomp_predict(
-      number_of_draws = min(dim(fit_matrix)[1], 500)
-    ) |>
-    distinct(!!.sample, !!.cell_group, proportion_mean) |>
-    mutate( proportion_mean =
-              proportion_mean |>
-             #compress_zero_one() |>
-             boot::logit()
-    )|>
-  # Join counts
-  left_join(
-    .data |>
-      attr("model_input") %$%
-      y |>
-      as_tibble(rownames = quo_name(.sample)) |>
-      pivot_longer(-!!.sample, names_to = quo_name(.cell_group), values_to = quo_name(.count)) |>
-      with_groups(!!.sample,  ~ .x |> mutate(observed_proportion := !!.count / sum(!!.count ))) |>
-
-      with_groups(!!.sample,  ~ .x |>  mutate(exposure := sum(!!.count))  ) |>
-
-      mutate(observed_proportion =
-               observed_proportion |>
-               compress_zero_one() |>
-               boot::logit()
-      ),
-    by = c(quo_name(.sample), quo_name(.cell_group))
-  ) |>
-  mutate(logit_residuals = observed_proportion - proportion_mean) |>
-  select(!!.sample, !!.cell_group, logit_residuals, exposure)
-
+  message("sccomp says: calculating residuals")
+  residuals = .data |> sccomp_calculate_residuals()
 
   message("sccomp says: regressing out unwanted factors")
 
@@ -1228,23 +1282,29 @@ sccomp_remove_unwanted_variation.sccomp_tbl = function(.data,
   .data |>
     sccomp_predict(
       formula_composition = formula_composition,
-      number_of_draws = min(dim(fit_matrix)[1], 500)
+      number_of_draws = 
+        .data |>
+        attr("fit") |>
+        dim() |>
+        _[1] |> 
+        min(500) 
     ) |>
     distinct(!!.sample, !!.cell_group, proportion_mean) |>
-    mutate(proportion_mean =
-             proportion_mean |>
-             # compress_zero_one() |>
-             boot::logit()
-    ) |>
+    # mutate(proportion_mean =
+    #          proportion_mean |>
+    #          # compress_zero_one() |>
+    #          boot::logit()
+    # ) |>
     left_join(residuals,  by = c(quo_name(.sample), quo_name(.cell_group))) |>
-    mutate(adjusted_proportion = proportion_mean + logit_residuals) |>
-    mutate(adjusted_proportion = adjusted_proportion |> boot::inv.logit()) |>
-    with_groups(!!.sample,  ~ .x |> mutate(adjusted_proportion := adjusted_proportion / sum(adjusted_proportion ))) |>
+    mutate(adjusted_proportion = proportion_mean + residuals) |>
+  	mutate(adjusted_proportion = adjusted_proportion |> pmax(0)) |> 
+    # mutate(adjusted_proportion = adjusted_proportion |> boot::inv.logit()) |>
+    # with_groups(!!.sample,  ~ .x |> mutate(adjusted_proportion := adjusted_proportion / sum(adjusted_proportion ))) |>
 
     # Recostituite counts
     mutate(adjusted_counts = adjusted_proportion * exposure) |>
 
-    select(!!.sample, !!.cell_group, adjusted_proportion, adjusted_counts, logit_residuals)
+    select(!!.sample, !!.cell_group, adjusted_proportion, adjusted_counts, residuals)
 
 
 
