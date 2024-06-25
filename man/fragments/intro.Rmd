@@ -5,7 +5,7 @@
 
 Please cite [PNAS - sccomp: Robust differential composition and variability analysis for single-cell data](https://www.pnas.org/doi/full/10.1073/pnas.2203828120)
 
-## Characteristics
+# Characteristics
 
 - Complex linear models with continuous and categorical covariates
 - Multilevel modelling, with population fixed and random effects/intercept
@@ -63,61 +63,51 @@ factor of interest only. The variability model must be a subset of the model for
 
 ## Binary factor 
 
+### From proportions
 Of the output table, the estimate columns start with the prefix `c_` indicate `composition`, or with `v_` indicate `variability` (when formula_variability is set).
 
-### From Seurat, SingleCellExperiment, metadata objects
 
-```{r eval=FALSE}
 
-sccomp_result = 
-  single_cell_object |>
-  sccomp_estimate( 
-    formula_composition = ~ type, 
-    .sample =  sample, 
-    .cell_group = cell_group, 
-    bimodal_mean_variability_association = TRUE,
-    cores = 1 
-  ) |> 
-  sccomp_remove_outliers(cores = 1) |> # Optional
-  sccomp_test()
+If counts are available we strongly discourage the use of proportions, as an important source of uncertainty (i.e. for rare groups/cell-types) is not modeled. 
 
-```
-
-### From counts
+Proportions should be bigger than 0. Assuming that 0s derive from a precision threshold (e.g. deconvolution), 0s are converted to the smaller non 0  value.
 
 ```{r, message=FALSE, warning=FALSE}
 
-sccomp_result = 
+res = 
   counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ type, 
     .sample = sample,
     .cell_group = cell_group,
-    .count = count, 
+    .count = proportion, 
     bimodal_mean_variability_association = TRUE,
     cores = 1, verbose = FALSE
   ) |> 
   sccomp_remove_outliers(cores = 1, verbose = FALSE) |> # Optional
   sccomp_test()
 
+res
+
 ```
+
+# Visualisation
 
 ## Summary plots
 
 ```{r, out.height="200%"}
-plots = sccomp_result |> plot() 
+plots = plot(res) 
 ```
 
-A plot of group proportion, faceted by groups. The blue boxplots represent the posterior predictive check. If the model is likely to be descriptively adequate to the data, the blue box plot should roughly overlay with the black box plot, which represents the observed data. The outliers are coloured in red. A box plot will be returned for every (discrete) covariate present in `formula_composition`. The colour coding represents the significant associations for composition and/or variability.
+### Visualise the descriptive adequacy of the model
+
+A plot of group proportion, faceted by groups. The blue boxplots represent the posterior predictive check. If the model is likely to be
+descriptively adequate to the data, the blue box plot should roughly overlay with the black box plot, which represents the observed data. The
+outliers are coloured in red. A box plot will be returned for every (discrete) covariate present in `formula_composition`. The colour coding
+represents the significant associations for composition and/or variability.
 
 ```{r}
 plots$boxplot
-```
-
-A plot of estimates of differential composition (c\_) on the x-axis and differential variability (v\_) on the y-axis. The error bars represent 95% credible intervals. The dashed lines represent the minimal effect that the hypothesis test is based on. An effect is labelled as significant if bigger than the minimal effect according to the 95% credible interval. Facets represent the covariates in the model.
-
-```{r}
-plots$credible_intervals_1D
 ```
 
 
@@ -131,15 +121,42 @@ plots$credible_intervals_2D
 ```
 
 
+### Effects significance
+
+A plot of estimates of differential composition (c\_) on the x-axis and differential variability (v\_) on the y-axis. The error bars represent
+95% credible intervals. The dashed lines represent the minimal effect that the hypothesis test is based on. An effect is labelled as
+significant if bigger than the minimal effect according to the 95% credible interval. Facets represent the covariates in the model.
+
+```{r}
+plots$credible_intervals_1D
+```
+
+## Visualisation of the MCMC chains from the posterior distribution
+
+It is possible to directly evaluate the posterior distribution. In this example, we plot the Monte Carlo chain for the slope parameter of the
+first cell type. We can see that it has converged and is negative with probability 1.
+
+```{r}
+res %>% attr("fit") %>% rstan::traceplot("beta[2,1]")
+```
+
+
+
+
+
+
+
+
 ## Contrasts
 
-```{r, message=FALSE, warning=FALSE}
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
 
-seurat_obj |>
+counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ 0 + type, 
     .sample = sample,
     .cell_group = cell_group, 
+    .count = proportion,
     bimodal_mean_variability_association = TRUE,
     cores = 1, verbose = FALSE
   ) |> 
@@ -161,11 +178,12 @@ library(loo)
 
 # Fit first model
 model_with_factor_association = 
-  seurat_obj |>
+  counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ type, 
     .sample =  sample, 
     .cell_group = cell_group, 
+    .count = proportion,
     bimodal_mean_variability_association = TRUE,
     cores = 1, 
     enable_loo = TRUE
@@ -173,11 +191,12 @@ model_with_factor_association =
 
 # Fit second model
 model_without_association = 
-  seurat_obj |>
+  counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ 1, 
     .sample =  sample, 
     .cell_group = cell_group, 
+    .count = proportion,
     bimodal_mean_variability_association = TRUE,
     cores = 1 , 
     enable_loo = TRUE
@@ -197,13 +216,13 @@ We can model the cell-group variability also dependent on the type, and so test 
 
 ```{r, message=FALSE, warning=FALSE}
 
-res = 
-  seurat_obj |>
+  counts_obj |>
   sccomp_estimate( 
     formula_composition = ~ type, 
     formula_variability = ~ type,
     .sample = sample,
     .cell_group = cell_group,
+    .count = proportion,
     bimodal_mean_variability_association = TRUE,
     cores = 1, verbose = FALSE
   )
@@ -211,6 +230,12 @@ res =
 res
 
 ```
+
+### Mean/variability association
+
+Plot 2D significance plot. Data points are cell groups. Error bars are the 95% credible interval. The dashed lines represent the default threshold fold change for which the probabilities (c_pH0, v_pH0) are calculated. pH0 of 0 represent the rejection of the null hypothesis that no effect is observed.
+
+This plot is provided only if differential variability has been tested. The differential variability estimates are reliable only if the linear association between mean and variability for `(intercept)` (left-hand side facet) is satisfied. A scatterplot (besides the Intercept) is provided for each category of interest. The for each category of interest, the composition and variability effects should be generally uncorrelated.
 
 
 # Suggested settings 
@@ -223,6 +248,46 @@ We recommend setting `bimodal_mean_variability_association  = TRUE`. The bimodal
 
 We recommend setting `bimodal_mean_variability_association  = FALSE` (Default).
 
+
+
+# Multilevel modelling
+
+`sccomp` is cabable of estimating population (i.e. fixed) and group (i.e. random) effects. The formulation is analogous to the `lme4` package and `brms`.
+
+!! For now, only one grouping is allowed (e.g. group2__).
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+
+res = 
+  seurat_obj |>
+  sccomp_estimate( 
+    formula_composition = ~ type + continuous_covariate + (type | group2__), 
+    formula_variability = ~ type,
+    .sample = sample,
+    .cell_group = cell_group,
+    bimodal_mean_variability_association = TRUE,
+    cores = 1,
+    verbose = FALSE,
+    variational_inference = FALSE # For this more complex model use full HMC inference
+  ) |> 
+  sccomp_remove_outliers(variational_inference = FALSE, verbose = FALSE) |> 
+	sccomp_test(
+	  test_composition_above_logit_fold_change = 0.2
+	)
+
+res
+
+```
+
+# Removal of unwanted variation
+
+After you model your dataset, you can remove the unwanted variation from your input data, **for visualisation purposes** 
+
+We decide to just keep the type population (i.e. fixed) effect for abundance, and do not keep it for variability.
+
+```{r, eval=FALSE}
+res |> sccomp_remove_unwanted_variation(~type)
+```
 
 ## Visualisation of the MCMC chains from the posterior distribution
 
@@ -248,3 +313,4 @@ This plot is provided only if differential variability has been tested. The diff
 ```{r}
 plots$credible_intervals_2D
 ```
+

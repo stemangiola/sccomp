@@ -1107,12 +1107,22 @@ data_spread_to_model_input =
     }
     
     
+    
+    y = .data_spread %>% select(-any_of(factor_names), -exposure, -!!.grouping_for_random_intercept) %>% as_matrix(rownames = quo_name(.sample))
+    
+    # If proportion ix 0 issue
+    is_proportion = y |> as.numeric() |> max()  |> between(0,1) |> all()
+    if(is_proportion & min(y)==0){
+      warning("sccomp says: your proportion values include 0. Assuming that 0s derive from a precision threshold (e.g. deconvolution), 0s are converted to the smaller non 0 proportion value.")
+      y[y==0] = min(y[y>0])
+     }
+    
     data_for_model =
       list(
         N = .data_spread %>% nrow(),
         M = .data_spread %>% select(-!!.sample, -any_of(factor_names), -exposure, -!!.grouping_for_random_intercept) %>% ncol(),
         exposure = .data_spread$exposure,
-        y = .data_spread %>% select(-any_of(factor_names), -exposure, -!!.grouping_for_random_intercept) %>% as_matrix(rownames = quo_name(.sample)),
+        y = y,
         X = X,
         XA = XA,
         Xa = Xa,
@@ -1230,12 +1240,25 @@ data_to_spread = function(.data, formula, .sample, .cell_type, .count, .grouping
   .count = enquo(.count)
   .grouping_for_random_intercept = .grouping_for_random_intercept |> map(~ .x |> quo_name() ) |> unlist()
 
-  .data %>%
-    nest(data = -!!.sample) %>%
-    mutate(exposure = map_int(data, ~ .x %>% pull(!!.count) %>% sum() )) %>%
-    unnest(data) %>%
-    select(!!.sample, !!.cell_type, exposure, !!.count, parse_formula(formula), any_of(.grouping_for_random_intercept)) %>%
-    spread(!!.cell_type, !!.count)
+  is_proportion = .data |> pull(!!.count) |> max() <= 1
+  
+  .data = 
+    .data |>
+    nest(data = -!!.sample) 
+  
+  # If proportions exposure = 1
+  if(is_proportion) .data = .data |> mutate(exposure = 1)
+  else
+    .data = 
+      .data |>
+      mutate(exposure = map_int(data, ~ .x |> pull(!!.count) |> sum() )) 
+  
+  .data |>
+      unnest(data) |>
+      select(!!.sample, !!.cell_type, exposure, !!.count, parse_formula(formula), any_of(.grouping_for_random_intercept)) |>
+      spread(!!.cell_type, !!.count)
+  
+  
 
 }
 
