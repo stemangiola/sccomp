@@ -3090,6 +3090,60 @@ contains_only_valid_chars_for_column <- function(column_names) {
   sapply(column_names, check_validity)
 }
 
+#' Check Sample Consistency of Factors
+#'
+#' This function checks for each sample in the provided data frame if the number of unique
+#' covariate values from a specified formula matches the number of samples. It is useful for
+#' verifying data consistency before statistical analysis. The function stops and throws an
+#' error if inconsistencies are found.
+#'
+#' @importFrom dplyr select
+#' @importFrom dplyr filter
+#' @importFrom dplyr mutate
+#' @importFrom dplyr pull
+#' @importFrom dplyr distinct
+#' @importFrom tidyr pivot_longer
+#' @importFrom purrr map_lgl
+#'
+#' @param .data A data frame containing the samples and covariates.
+#' @param my_formula A formula specifying the covariates to check, passed as a string.
+#'
+#' @details The function selects the sample and covariates based on `my_formula`, pivots
+#' the data longer so each row represents a unique sample-covariate combination, nests
+#' the data by covariate name, and checks if the number of unique sample-covariate
+#' pairs matches the number of samples for each covariate.
+#'
+#' @return This function does not return a value; it stops with an error message if any
+#' inconsistencies are found.
+#'
+#' @noRd
+#' @keywords internal
+check_sample_consistency_of_factors = function(.data, my_formula, .sample){
+  
+  .sample = enquo(.sample)
+  
+  # Check that I have one set of covariates per sample
+  any_covariate_not_matching_sample_size = 
+    .data |> 
+    select(!!.sample, parse_formula(my_formula)) |> 
+    pivot_longer(-!!.sample) |> 
+    nest(data = -name) |> 
+    mutate(correct_size = map_lgl(data,
+                                  ~ 
+                                    (.x |> distinct(!!.sample, value) |> nrow()) <= 
+                                    (.x |> distinct(!!.sample) |> nrow())
+    )) |> 
+    filter(!correct_size)
+  
+  if( any_covariate_not_matching_sample_size |> nrow() > 0 ) stop(
+    sprintf("sccomp says: your \"%s\" factor(s) is(are) mismatched across samples. ", any_covariate_not_matching_sample_size |> pull(name) |> paste(collapse = ", ")),
+    "For example, sample_bar having more than one value for factor_foo. ",
+    "For sample_bar you should have one value for factor_foo. consistent across groups (e.g. cell types)."
+  )
+  
+}
+
+
 
 #' chatGPT - Intelligently Remove Surrounding Brackets from Each String in a Vector
 #'

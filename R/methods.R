@@ -387,6 +387,10 @@ sccomp_estimate.data.frame = function(.data,
   .count = enquo(.count)
   .sample_cell_group_pairs_to_exclude = enquo(.sample_cell_group_pairs_to_exclude)
 
+  # Check Sample Consistency of Factors
+  check_sample_consistency_of_factors(.data, formula_composition, !!.sample)
+ 
+  
   if( quo_is_null(.count))
     res = sccomp_glm_data_frame_raw(
       .data,
