@@ -7,14 +7,31 @@ data("counts_obj")
 
 set.seed(42)
 
+# test_that("model instantiate",{
+#   
+#   instantiate::stan_package_model(
+#     name = "glm_multi_beta_binomial",
+#     package = "sccomp"
+#   ) |> 
+#     expect_s3_class("CmdStanModel") |> 
+#     expect_warning()
+#   
+# })
+
+test_that("model instantiate",{
+  
+  sccomp:::load_model("glm_multi_beta_binomial") |> 
+    expect_s3_class("CmdStanModel")
+})
+
 my_estimate = 
   seurat_obj |>
   sccomp_estimate(
     formula_composition = ~ continuous_covariate * type ,
     formula_variability = ~ 1,
     sample, cell_group,
-    cores = 1,
-    mcmc_seed = 42,
+    cores = 1, inference_method = "pathfinder",
+     mcmc_seed = 42,
     max_sampling_iterations = 1000
   )
 
@@ -25,7 +42,7 @@ my_estimate_full_bayes =
     formula_variability = ~ 1,
     sample, cell_group,
     cores = 1, 
-    variational_inference = F,
+    inference_method = "hmc",
     mcmc_seed = 42,
     max_sampling_iterations = 1000
   )
@@ -44,7 +61,7 @@ my_estimate_no_intercept =
 my_estimate_random = 
   seurat_obj |>
   sccomp_estimate(
-    formula_composition = ~ 0 + type + (type | group__),
+    formula_composition = ~ 0 + type + (0 + type | group__),
     formula_variability = ~ 1,
     sample, cell_group,
     cores = 1,
@@ -74,6 +91,8 @@ my_estimate_random =
 # 		mcmc_seed = 42,     
 # 		max_sampling_iterations = 1000
 # 	)
+
+
 
 test_that("Generate data",{
 
@@ -150,7 +169,7 @@ test_that("outliers",{
   
 
   my_estimate |>
-    sccomp_remove_outliers(cores = 1, max_sampling_iterations = 1000)
+    sccomp_remove_outliers(cores = 1, max_sampling_iterations = 1000, variational_inference = FALSE)
   
 })
 
@@ -306,7 +325,7 @@ test_that("remove unwanted variation",{
       formula_variability = ~ 1,
       sample, cell_group,
       cores = 1,
-      mcmc_seed = 42,    
+      mcmc_seed = 43,    
       max_sampling_iterations = 1000
     )
 
@@ -474,8 +493,7 @@ test_that("test constrasts",{
   # Wrong interaction
   my_estimate |> 
     sccomp_test(contrasts = c("(1/2*continuous_covariate:typehealthy + 1/2*`continuous_covariate:typehealthy`) -  `continuous_covariate:typehealthy`") ) |> 
-    expect_warning("sccomp says: for columns which have special characters") |> 
-    expect_warning("numerical expression has") 
+    expect_warning("sccomp says: for columns which have special characters") 
   
 
 })

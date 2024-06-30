@@ -342,6 +342,13 @@ sccomp_glm.data.frame = function(.data,
     details="sccomp says: sccomp_glm() is soft-deprecated. Please use the new modular framework instead, which includes sccomp_estimate(), sccomp_test(), sccomp_remove_outliers(), among other functions."
   )
 
+  # DEPRECATION OF approximate_posterior_inference
+  if (is_present(approximate_posterior_inference) & !is.null(approximate_posterior_inference)) {
+    deprecate_warn("1.7.7", "sccomp::sccomp_estimate(approximate_posterior_inference = )", details = "The argument approximate_posterior_inference is now deprecated please use inference_method By default variational_inference value is inferred from approximate_posterior_inference.")
+    
+    inference_method = ifelse(approximate_posterior_inference == "all", "variational","hmc")
+  }
+  
   if(quo_is_null(.count) )
   result =    sccomp_glm_data_frame_raw(
         .data,
@@ -354,7 +361,7 @@ sccomp_glm.data.frame = function(.data,
         prior_overdispersion_mean_association = prior_mean_variable_association,
         percent_false_positive = percent_false_positive ,
         check_outliers = check_outliers,
-        variational_inference = approximate_posterior_inference == "all",
+        inference_method = inference_method,
         test_composition_above_logit_fold_change = test_composition_above_logit_fold_change, 
         .sample_cell_group_pairs_to_exclude = !!.sample_cell_group_pairs_to_exclude,
         verbose = verbose,

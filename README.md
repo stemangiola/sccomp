@@ -7,43 +7,43 @@ single-cell data
 [![Lifecycle:maturing](https://img.shields.io/badge/lifecycle-maturing-blue.svg)](https://www.tidyverse.org/lifecycle/#maturing)
 [![R build
 status](https://github.com/stemangiola/tidyseurat/workflows/R-CMD-check/badge.svg)](https://github.com/stemangiola/tidyseurat/actions/)
-
 <!-- badges: end -->
 
-<a href="https://www.youtube.com/watch?v=R_lt58We9nA&ab_channel=RConsortium" target="_blank">
-<img src="https://img.youtube.com/vi/R_lt58We9nA/mqdefault.jpg" alt="Watch the video" width="280" height="180" border="10" />
-</a>
+# <img src="inst/logo-01.png" height="139px" width="120px" />
 
-# <img src="inst/logo-01.png" height="139px" width="120px"/>
-
-`sccomp` tests differences in cell type proportions from single-cell
-data. It is robust against outliers, it models continuous and discrete
-factors, and capable of random-effect/intercept modelling.
-
-Please cite [PNAS - sccomp: Robust differential composition and
-variability analysis for single-cell
-data](https://www.pnas.org/doi/full/10.1073/pnas.2203828120)
-
-## Characteristics
-
-- Complex linear models with continuous and categorical covariates
-- Multilevel modelling, with population fixed and random
-  effects/intercept
-- Modelling data from counts
-- Testing differences in cell-type proportionality
-- Testing differences in cell-type specific variability
-- Cell-type information share for variability adaptive shrinkage
-- Testing differential variability
-- Probabilistic outlier identification
-- Cross-dataset learning (hyperpriors).
+Cell omics such as single-cell genomics, proteomics and microbiomics
+allow the characterisation of tissue and microbial community
+composition, which can be compared between conditions to identify
+biological drivers. This strategy has been critical to unveiling markers
+of disease progression such as cancer and pathogen infection. For cell
+omic data, no method for differential variability analysis exists, and
+methods for differential composition analysis only take a few
+fundamental data properties into account. Here we introduce sccomp, a
+generalised method for differential composition and variability analyses
+able to jointly model data count distribution, compositionality,
+group-specific variability and proportion mean-variability association,
+with awareness against outliers. Sccomp is an extensive analysis
+framework that allows realistic data simulation and cross-study
+knowledge transfer. Here, we demonstrate that mean-variability
+association is ubiquitous across technologies showing the inadequacy of
+the very popular Dirichlet-multinomial modelling and provide mandatory
+principles for differential variability analysis. We show that sccomp
+accurately fits experimental data, with a 50% incremental improvement
+over state-of-the-art algorithms. Using sccomp, we identified novel
+differential constraints and composition in the microenvironment of
+primary breast cancer.
 
 # Installation
+
+## (simple) Suggested for single-cell and CyTOF analyses
 
 **Bioconductor**
 
 ``` r
-if (!requireNamespace("BiocManager")) install.packages("BiocManager")
-BiocManager::install("sccomp")
+if (!requireNamespace("BiocManager")) {
+   install.packages("BiocManager")
+ }
+ BiocManager::install("sccomp")
 ```
 
 **Github**
@@ -52,302 +52,985 @@ BiocManager::install("sccomp")
 devtools::install_github("stemangiola/sccomp")
 ```
 
-| Function                           | Description                                                                                                                 |
-|------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
-| `sccomp_estimate`                  | Fit the model onto the data, and estimate the coefficients                                                                  |
-| `sccomp_remove_outliers`           | Identify outliers probabilistically based on the model fit, and exclude them from the estimation                            |
-| `sccomp_test`                      | Calculate the probability that the coefficients are outside the H0 interval (i.e. test_composition_above_logit_fold_change) |
-| `sccomp_replicate`                 | Simulate data from the model, or part of the model                                                                          |
-| `sccomp_predict`                   | Predicts proportions, based on the mode, or part of the model                                                               |
-| `sccomp_remove_unwanted_variation` | Removes the variability for unwanted factors                                                                                |
-| `plot`                             | Plors summary plots to asses significance                                                                                   |
+## (more complex and efficient, until further optimisation of the default installation) Suggested for microbiomics
+
+**Github**
+
+``` r
+install.packages("cmdstanr", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+check_cmdstan_toolchain()
+install_cmdstan(cores = 2)
+# Then, check the correct cmdstanr installation here
+# https://mc-stan.org/cmdstanr/articles/cmdstanr.html
+
+# Then install sccomp with the cmdstanr branch
+devtools::install_github("stemangiola/sccomp@cmdstanr")
+```
 
 # Analysis
 
-`sccomp` can model changes in composition and variability. By default,
-the formula for variability is either `~1`, which assumes that the
-cell-group variability is independent of any covariate or
+`sccomp` can model changes in composition and variability. Normally the
+furmula for variability is either `~1`, which assumes that the
+cell-group variability is independent on any covariate, or
 `~ factor_of_interest`, which assumes that the model is dependent on the
-factor of interest only. The variability model must be a subset of the
-model for composition.
+factor of interest only. However, more complex models for variability
+are possible, is the sample size is large. In any case the model for
+variability must be a subset of the model for composition.
 
-## Binary factor
-
-Of the output table, the estimate columns start with the prefix `c_`
-indicate `composition`, or with `v_` indicate `variability` (when
-formula_variability is set).
-
-### From Seurat, SingleCellExperiment, metadata objects
+## From Seurat Object
 
 ``` r
-sccomp_result = 
-  single_cell_object |>
-  sccomp_estimate( 
-    formula_composition = ~ type, 
-    .sample =  sample, 
-    .cell_group = cell_group, 
-    bimodal_mean_variability_association = TRUE,
-    cores = 1 
-  ) |> 
-  sccomp_remove_outliers(cores = 1) |> # Optional
-  sccomp_test()
+res =
+  seurat_obj |>
+  sccomp_glm( 
+   formula_composition = ~ type, 
+    formula_variability = ~ 1, 
+    sample, 
+    cell_group 
+  )
 ```
 
-### From counts
+## From SingleCellExperiment Object
 
 ``` r
-sccomp_result = 
-  counts_obj |>
-  sccomp_estimate( 
+res =
+  sce_obj |>
+  sccomp_glm( 
     formula_composition = ~ type, 
+    formula_variability = ~ 1, 
+    sample, 
+    cell_group 
+  )
+```
+
+## From data.frame
+
+``` r
+res =
+  seurat_obj[[]] |>
+  sccomp_glm(
+    formula_composition = ~ type, 
+    formula_variability = ~ 1, 
+    sample, 
+    cell_group 
+  )
+```
+
+## From counts
+
+``` r
+res =
+  counts_obj |>
+  sccomp_glm( 
+    formula_composition = ~ type, 
+    formula_variability = ~ 1, 
     .sample = sample,
     .cell_group = cell_group,
-    .count = count, 
-    bimodal_mean_variability_association = TRUE,
-    cores = 1, verbose = FALSE
-  ) |> 
-  sccomp_remove_outliers(cores = 1, verbose = FALSE) |> # Optional
-  sccomp_test()
+    .count = count
+  )
 ```
 
-## Summary plots
+    ## sccomp says: outlier identification first pass - step 1/3 [ETA: ~20s]
 
-A plot of group proportion, faceted by groups. The blue boxplots
-represent the posterior predictive check. If the model is likely to be
-descriptively adequate to the data, the blue box plot should roughly
-overlay with the black box plot, which represents the observed data. The
-outliers are coloured in red. A box plot will be returned for every
-(discrete) covariate present in `formula_composition`. The colour coding
-represents the significant associations for composition and/or
-variability.
+    ## Finished in  2.4 seconds.
+    ## Running standalone generated quantities after 1 MCMC chain...
+    ## 
+    ## Chain 1 finished in 0.0 seconds.
+
+    ## sccomp says: outlier identification second pass - step 2/3 [ETA: ~60s]
+
+    ## Finished in  9.0 seconds.
+    ## Running standalone generated quantities after 1 MCMC chain...
+    ## 
+    ## Chain 1 finished in 0.0 seconds.
+
+    ## sccomp says: outlier-free model fitting - step 3/3 [ETA: ~20s]
+
+<<<<<<< HEAD
+    ## Running MCMC with 6 parallel chains...
+    ## 
+    ## Chain 1 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 1 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 1 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[299] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 1 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 1 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 1
+
+    ## Chain 1 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 1 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[299] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 1 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 1 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 1
+
+    ## Chain 1 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 1 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 1 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 1 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 1
+
+    ## Chain 1 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 1 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[6] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 1 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 1 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 1
+
+    ## Chain 2 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 2 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 2 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[4] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 2 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 2 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 2
+
+    ## Chain 2 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 2 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[4] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 2 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 2 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 2
+
+    ## Chain 2 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 2 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[5] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 2 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 2 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 2
+
+    ## Chain 3 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 3 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 3 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 3 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 3 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 3
+
+    ## Chain 3 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 3 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[10] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 3 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 3 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 3
+
+    ## Chain 4 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 4 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 4 Exception: Exception: beta_binomial_lpmf: Second prior sample size parameter[328] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 4 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 4 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 4
+
+    ## Chain 4 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 4 Exception: Exception: beta_binomial_lpmf: Second prior sample size parameter[328] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 4 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 4 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 4
+
+    ## Chain 4 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 4 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 4 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 4 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 4
+
+    ## Chain 4 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 4 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[10] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 4 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 4 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 4
+
+    ## Chain 5 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 5 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 5 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[26] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 5 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 5 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 5
+
+    ## Chain 5 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 5 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[26] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 5 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 5 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 5
+
+    ## Chain 5 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 5 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 5 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 5 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 5
+
+    ## Chain 5 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 5 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[20] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 5 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 5 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 5
+
+    ## Chain 6 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 6 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 6 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[296] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 6 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 6 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 6
+
+    ## Chain 6 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 6 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[296] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 6 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 6 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 6
+
+    ## Chain 6 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 6 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 6 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 6 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 6
+
+    ## Chain 6 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 6 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[22] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 6 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 6 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 6
+
+    ## Chain 1 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 2 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 6 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 3 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 4 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 1 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 5 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 2 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 6 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 1 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 1 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 5 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 3 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 4 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 2 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 2 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 6 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 6 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 1 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 5 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 5 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 3 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 3 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 4 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 4 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 6 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 1 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 2 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 3 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 5 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 4 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 6 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 3 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 5 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 1 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 6 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 2 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 3 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 4 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 1 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 5 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 6 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 3 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 1 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 4 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 5 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 6 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 2 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 3 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 1 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 4 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 5 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 6 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 1 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 1 finished in 9.1 seconds.
+    ## Chain 3 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 5 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 6 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 6 finished in 9.0 seconds.
+    ## Chain 3 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 4 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 3 finished in 9.5 seconds.
+    ## Chain 2 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 5 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 5 finished in 9.5 seconds.
+    ## Chain 4 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 2 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 4 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 4 finished in 10.6 seconds.
+    ## Chain 2 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 2 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 2 finished in 12.9 seconds.
+    ## 
+    ## All 6 chains finished successfully.
+    ## Mean chain execution time: 10.1 seconds.
+    ## Total execution time: 13.3 seconds.
+=======
+    ## sccomp says: the composition design matrix has columns: (Intercept), typecancer
+
+    ## sccomp says: the variability design matrix has columns: (Intercept)
 
 ``` r
-sccomp_result |> 
-  sccomp_boxplot(factor = "type")
+res
 ```
 
-    ## Joining with `by = join_by(cell_group, sample)`
-    ## Joining with `by = join_by(cell_group, type)`
+    ## # A tibble: 72 × 14
+    ##    cell_group parameter   covariate c_lower c_effect c_upper   c_pH0    c_FDR
+    ##    <chr>      <chr>       <chr>       <dbl>    <dbl>   <dbl>   <dbl>    <dbl>
+    ##  1 B1         (Intercept) <NA>       0.982     1.15   1.32   0       0       
+    ##  2 B1         typecancer  type      -1.18     -0.867 -0.551  0       0       
+    ##  3 B2         (Intercept) <NA>       0.390     0.693  0.982  0.00200 0.000119
+    ##  4 B2         typecancer  type      -1.09     -0.625 -0.160  0.0340  0.00413 
+    ##  5 B3         (Intercept) <NA>      -0.573    -0.291 -0.0134 0.253   0.0192  
+    ##  6 B3         typecancer  type      -0.726    -0.304  0.0915 0.292   0.0758  
+    ##  7 BM         (Intercept) <NA>      -1.22     -0.935 -0.652  0       0       
+    ##  8 BM         typecancer  type      -0.722    -0.308  0.0898 0.291   0.0650  
+    ##  9 CD4 1      (Intercept) <NA>       0.225     0.408  0.585  0.0140  0.000860
+    ## 10 CD4 1      typecancer  type      -0.0757    0.176  0.428  0.580   0.164   
+    ## # … with 62 more rows, and 6 more variables: v_lower <dbl>, v_effect <dbl>,
+    ## #   v_upper <dbl>, v_pH0 <dbl>, v_FDR <dbl>, count_data <list>
 
-![](inst/figures/unnamed-chunk-10-1.png)<!-- -->
+## With contrasts
 
-A plot of estimates of differential composition (c\_) on the x-axis and
-differential variability (v\_) on the y-axis. The error bars represent
+``` r
+res =
+  counts_obj |>
+  sccomp_glm( 
+    formula_composition = ~ 0 + type, 
+    formula_variability = ~ 1, 
+    contrasts =  c(typecancer - typebenign, typebenign - typecancer),
+    .sample = sample,
+    .cell_group = cell_group,
+    .count = count
+  )
+```
+
+    ## sccomp says: outlier identification first pass - step 1/3 [ETA: ~20s]
+
+    ## sccomp says: outlier identification second pass - step 2/3 [ETA: ~60s]
+
+    ## sccomp says: outlier-free model fitting - step 3/3 [ETA: ~20s]
+
+    ## sccomp says: the composition design matrix has columns: typebenign, typecancer
+
+    ## sccomp says: the variability design matrix has columns: (Intercept)
+>>>>>>> master
+
+``` r
+res
+```
+
+<<<<<<< HEAD
+    ## # A tibble: 72 × 8
+    ##    cell_group parameter   c_lower c_effect c_upper  c_pH0   c_FDR count_data
+    ##    <chr>      <chr>         <dbl>    <dbl>   <dbl>  <dbl>   <dbl> <list>    
+    ##  1 B1         (Intercept)  0.550     0.707  0.873  0      0       <tibble>  
+    ##  2 B1         typecancer  -1.19     -0.885 -0.583  0      0       <tibble>  
+    ##  3 B2         (Intercept)  0.124     0.368  0.623  0.0866 0.00447 <tibble>  
+    ##  4 B2         typecancer  -1.12     -0.621 -0.150  0.0408 0.00491 <tibble>  
+    ##  5 B3         (Intercept) -0.603    -0.411 -0.206  0.0223 0.00154 <tibble>  
+    ##  6 B3         typecancer  -0.583    -0.207  0.145  0.483  0.133   <tibble>  
+    ##  7 BM         (Intercept) -1.31     -1.10  -0.881  0      0       <tibble>  
+    ##  8 BM         typecancer  -0.751    -0.334  0.0684 0.253  0.0644  <tibble>  
+    ##  9 CD4 1      (Intercept)  0.361     0.489  0.618  0      0       <tibble>  
+    ## 10 CD4 1      typecancer  -0.0715    0.164  0.410  0.616  0.178   <tibble>  
+    ## # … with 62 more rows
+=======
+    ## # A tibble: 72 × 9
+    ##    cell_group parameter        covariate c_lower c_effect c_upper  c_pH0   c_FDR
+    ##    <chr>      <chr>            <chr>       <dbl>    <dbl>   <dbl>  <dbl>   <dbl>
+    ##  1 B1         typebenign - ty… type       0.615     0.945  1.31   0      0      
+    ##  2 B1         typecancer - ty… type      -1.31     -0.945 -0.615  0      0      
+    ##  3 B2         typebenign - ty… type       0.170     0.642  1.09   0.0340 0.00428
+    ##  4 B2         typecancer - ty… type      -1.09     -0.642 -0.170  0.0340 0.00428
+    ##  5 B3         typebenign - ty… type      -0.145     0.224  0.582  0.448  0.136  
+    ##  6 B3         typecancer - ty… type      -0.582    -0.224  0.145  0.448  0.136  
+    ##  7 BM         typebenign - ty… type      -0.0439    0.348  0.752  0.217  0.0540 
+    ##  8 BM         typecancer - ty… type      -0.752    -0.348  0.0439 0.217  0.0540 
+    ##  9 CD4 1      typebenign - ty… type      -0.396    -0.150  0.102  0.666  0.226  
+    ## 10 CD4 1      typecancer - ty… type      -0.102     0.150  0.396  0.666  0.226  
+    ## # … with 62 more rows, and 1 more variable: count_data <list>
+
+Of the output table, the estimate columns startwith the prefix `c_`
+indicate `composition`.
+
+## Suggested settings for single-cell RNA sequencing
+
+We reccommend to set `bimodal_mean_variability_association  = TRUE`. The
+bimodality of the mean-variability association can be confirmed from the
+plots$credible_intervals_2D (see below).
+
+## Suggested settings for CyTOF and microbiome data
+
+We reccommend to set `bimodal_mean_variability_association  = FALSE`
+(Default).
+>>>>>>> master
+
+## Visualise data + inference
+
+``` r
+plots = plot_summary(res) 
+```
+
+<<<<<<< HEAD
+    ## Running standalone generated quantities after 6 MCMC chains, 1 chain at a time ...
+    ## 
+    ## Chain 1 finished in 0.0 seconds.
+    ## Chain 2 finished in 0.0 seconds.
+    ## Chain 3 finished in 0.0 seconds.
+    ## Chain 4 finished in 0.0 seconds.
+    ## Chain 5 finished in 0.0 seconds.
+    ## Chain 6 finished in 0.0 seconds.
+    ## 
+    ## All 6 chains finished successfully.
+    ## Mean chain execution time: 0.0 seconds.
+    ## Total execution time: 9.2 seconds.
+
+=======
+>>>>>>> master
+    ## Joining, by = c("sample", "cell_group")
+    ## Joining, by = c("cell_group", "type")
+
+Plot of group proportion, faceted by groups. The blue boxplots represent
+the posterior predictive check. If the model is likely be descriptively
+adequate to the data, the blue boxplot should roughly overlay with the
+black boxplot, which represent the observed data. The outliers are
+coloured in red. A boxplot will be returned for every (discrete)
+covariates present in `formula_composition`. The color coding represent
+the significant associations for composition and/or variability.
+
+``` r
+plots$boxplot
+```
+
+    ## [[1]]
+
+![](inst/figures/unnamed-chunk-12-1.png)<!-- -->
+
+Plot of estimates of differential composition (c\_) on the x axis, and
+differential variability (v\_) on the y axis. The error bars represent
 95% credible intervals. The dashed lines represent the minimal effect
 that the hypothesis test is based on. An effect is labelled as
 significant if bigger than the minimal effect according to the 95%
 credible interval. Facets represent the covariates in the model.
 
 ``` r
-sccomp_result |> 
-  plot_1D_intervals()
+plots$credible_intervals_1D
 ```
 
-![](inst/figures/unnamed-chunk-11-1.png)<!-- -->
-
-We can plot the relationship between abundance and variability. As we
-can see below, they are positively correlated, you also appreciate that
-this relationship is by model for single cell RNA sequencing data.
-
-`sccomp` models, these relationship to obtain a shrinkage effect on the
-estimates of both the abundance and the variability. This shrinkage is
-adaptive as it is modelled jointly, thanks for Bayesian inference.
-
-``` r
-sccomp_result |> 
-  plot_2D_intervals()
-```
-
-![](inst/figures/unnamed-chunk-12-1.png)<!-- -->
-
-You can produce the series of plots calling the `plot` method.
-
-``` r
-sccomp_result |> plot() 
-```
-
-## Contrasts
-
-``` r
-seurat_obj |>
-  sccomp_estimate( 
-    formula_composition = ~ 0 + type, 
-    .sample = sample,
-    .cell_group = cell_group, 
-    bimodal_mean_variability_association = TRUE,
-    cores = 1, verbose = FALSE
-  ) |> 
-  sccomp_test( contrasts =  c("typecancer - typehealthy", "typehealthy - typecancer"))
-```
-
-    ## # A tibble: 60 × 18
-    ##    cell_group  parameter factor c_lower c_effect c_upper   c_pH0   c_FDR c_n_eff
-    ##    <chr>       <chr>     <chr>    <dbl>    <dbl>   <dbl>   <dbl>   <dbl>   <dbl>
-    ##  1 B immature  typecanc… <NA>    -1.94     -1.40  -0.869 0       0            NA
-    ##  2 B immature  typeheal… <NA>     0.869     1.40   1.94  0       0            NA
-    ##  3 B mem       typecanc… <NA>    -2.32     -1.80  -1.24  0       0            NA
-    ##  4 B mem       typeheal… <NA>     1.24      1.80   2.32  0       0            NA
-    ##  5 CD4 cm S10… typecanc… <NA>    -1.54     -1.10  -0.648 0       0            NA
-    ##  6 CD4 cm S10… typeheal… <NA>     0.648     1.10   1.54  0       0            NA
-    ##  7 CD4 cm hig… typecanc… <NA>     0.833     1.87   2.94  2.50e-4 5.00e-5      NA
-    ##  8 CD4 cm hig… typeheal… <NA>    -2.94     -1.87  -0.833 2.50e-4 5.00e-5      NA
-    ##  9 CD4 cm rib… typecanc… <NA>     0.467     1.11   1.78  2.00e-3 5.23e-4      NA
-    ## 10 CD4 cm rib… typeheal… <NA>    -1.78     -1.11  -0.467 2.00e-3 5.23e-4      NA
-    ## # ℹ 50 more rows
-    ## # ℹ 9 more variables: c_R_k_hat <dbl>, v_lower <dbl>, v_effect <dbl>,
-    ## #   v_upper <dbl>, v_pH0 <dbl>, v_FDR <dbl>, v_n_eff <dbl>, v_R_k_hat <dbl>,
-    ## #   count_data <list>
-
-## Categorical factor (e.g. Bayesian ANOVA)
-
-This is achieved through model comparison with `loo`. In the following
-example, the model with association with factors better fits the data
-compared to the baseline model with no factor association. For
-comparisons `check_outliers` must be set to FALSE as the leave-one-out
-must work with the same amount of data, while outlier elimination does
-not guarantee it.
-
-If `elpd_diff` is away from zero of \> 5 `se_diff` difference of 5, we
-are confident that a model is better than the other
-[reference](https://discourse.mc-stan.org/t/interpreting-elpd-diff-loo-package/1628/2?u=stemangiola).
-In this case, -79.9 / 11.5 = -6.9, therefore we can conclude that model
-one, the one with factor association, is better than model two.
-
-``` r
-library(loo)
-
-# Fit first model
-model_with_factor_association = 
-  seurat_obj |>
-  sccomp_estimate( 
-    formula_composition = ~ type, 
-    .sample =  sample, 
-    .cell_group = cell_group, 
-    bimodal_mean_variability_association = TRUE,
-    cores = 1, 
-    enable_loo = TRUE
-  )
-
-# Fit second model
-model_without_association = 
-  seurat_obj |>
-  sccomp_estimate( 
-    formula_composition = ~ 1, 
-    .sample =  sample, 
-    .cell_group = cell_group, 
-    bimodal_mean_variability_association = TRUE,
-    cores = 1 , 
-    enable_loo = TRUE
-  )
-
-# Compare models
-loo_compare(
-  model_with_factor_association |> attr("fit") |> loo(),
-  model_without_association |> attr("fit") |> loo()
-)
-```
-
-## Differential variability, binary factor
-
-We can model the cell-group variability also dependent on the type, and
-so test differences in variability
-
-``` r
-res = 
-  seurat_obj |>
-  sccomp_estimate( 
-    formula_composition = ~ type, 
-    formula_variability = ~ type,
-    .sample = sample,
-    .cell_group = cell_group,
-    bimodal_mean_variability_association = TRUE,
-    cores = 1, verbose = FALSE
-  )
-
-res
-```
-
-    ## # A tibble: 60 × 14
-    ##    cell_group        parameter factor c_lower c_effect c_upper c_n_eff c_R_k_hat
-    ##    <chr>             <chr>     <chr>    <dbl>    <dbl>   <dbl>   <dbl>     <dbl>
-    ##  1 B immature        (Interce… <NA>    0.459     0.791  1.12       NaN      2.43
-    ##  2 B immature        typeheal… type    0.946     1.41   1.89       NaN      2.42
-    ##  3 B mem             (Interce… <NA>   -1.25     -0.828 -0.401      NaN      2.51
-    ##  4 B mem             typeheal… type    1.33      1.95   2.56       NaN      2.51
-    ##  5 CD4 cm S100A4     (Interce… <NA>    1.36      1.62   1.88       NaN      2.43
-    ##  6 CD4 cm S100A4     typeheal… type    0.757     1.15   1.53       NaN      2.38
-    ##  7 CD4 cm high cyto… (Interce… <NA>   -1.08     -0.495  0.0909     NaN      2.44
-    ##  8 CD4 cm high cyto… typeheal… type   -2.32     -1.58  -0.852      NaN      2.45
-    ##  9 CD4 cm ribosome   (Interce… <NA>   -0.0578    0.339  0.724      NaN      2.46
-    ## 10 CD4 cm ribosome   typeheal… type   -1.57     -1.05  -0.516      NaN      2.43
-    ## # ℹ 50 more rows
-    ## # ℹ 6 more variables: v_lower <dbl>, v_effect <dbl>, v_upper <dbl>,
-    ## #   v_n_eff <dbl>, v_R_k_hat <dbl>, count_data <list>
-
-# Suggested settings
-
-## For single-cell RNA sequencing
-
-We recommend setting `bimodal_mean_variability_association  = TRUE`. The
-bimodality of the mean-variability association can be confirmed from the
-plots\$credible_intervals_2D (see below).
-
-## For CyTOF and microbiome data
-
-We recommend setting `bimodal_mean_variability_association  = FALSE`
-(Default).
+![](inst/figures/unnamed-chunk-13-1.png)<!-- -->
 
 ## Visualisation of the MCMC chains from the posterior distribution
 
 It is possible to directly evaluate the posterior distribution. In this
-example, we plot the Monte Carlo chain for the slope parameter of the
-first cell type. We can see that it has converged and is negative with
+example we plot the Monte Carlo chain for the slope parameter of the
+first cell type. We can see that has converged and is negative with
 probability 1.
 
 ``` r
-res %>% attr("fit") %>% rstan::traceplot("beta[2,1]")
+attr(res, "fit")$draws(variables = c("beta[2,1]")) %>% 
+mcmc_trace()
 ```
 
-![](inst/figures/unnamed-chunk-17-1.png)<!-- -->
+![](inst/figures/unnamed-chunk-14-1.png)<!-- -->
+
+## Differential variability
+
+We can model the cell-group variability also dependent on type, and so
+test differences in variability
+
+``` r
+res = 
+  counts_obj |>
+  sccomp_glm( 
+    formula_composition = ~ type, 
+    formula_variability = ~ type, 
+    .sample = sample,
+    .cell_group = cell_group,
+    .count = count
+  )
+```
+
+    ## sccomp says: outlier identification first pass - step 1/3 [ETA: ~20s]
+
+    ## Finished in  2.5 seconds.
+    ## Running standalone generated quantities after 1 MCMC chain...
+    ## 
+    ## Chain 1 finished in 0.0 seconds.
+
+    ## sccomp says: outlier identification second pass - step 2/3 [ETA: ~60s]
+
+    ## Finished in  10.4 seconds.
+    ## Running standalone generated quantities after 1 MCMC chain...
+    ## 
+    ## Chain 1 finished in 0.0 seconds.
+
+    ## sccomp says: outlier-free model fitting - step 3/3 [ETA: ~20s]
+
+<<<<<<< HEAD
+    ## Running MCMC with 6 parallel chains...
+    ## 
+    ## Chain 1 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 1 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 1 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 1 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 1 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 1
+
+    ## Chain 1 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 1 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[32] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 1 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 1 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 1
+
+    ## Chain 2 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 2 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 2 Exception: Exception: beta_binomial_lpmf: Second prior sample size parameter[281] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 2 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 2 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 2
+
+    ## Chain 2 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 2 Exception: Exception: beta_binomial_lpmf: Second prior sample size parameter[281] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 2 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 2 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 2
+
+    ## Chain 2 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 2 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 2 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 2 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 2
+
+    ## Chain 2 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 2 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[3] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 2 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 2 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 2
+
+    ## Chain 3 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 3 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 3 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[24] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 3 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 3 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 3
+
+    ## Chain 3 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 3 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[24] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 3 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 3 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 3
+
+    ## Chain 3 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 3 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 3 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 3 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 3
+
+    ## Chain 3 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 3 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[11] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 3 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 3 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 3
+
+    ## Chain 4 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 4 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 4 Exception: Exception: beta_binomial_lpmf: Second prior sample size parameter[10] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 4 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 4 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 4
+
+    ## Chain 4 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 4 Exception: Exception: beta_binomial_lpmf: Second prior sample size parameter[10] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 4 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 4 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 4
+
+    ## Chain 4 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 4 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 4 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 4 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 4
+
+    ## Chain 4 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 4 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 4 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 4 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 4
+
+    ## Chain 5 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 5 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 5 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 5 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 5 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 5
+
+    ## Chain 5 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 5 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 5 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 5 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 5
+
+    ## Chain 6 Iteration:   1 / 966 [  0%]  (Warmup)
+
+    ## Chain 6 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 6 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[300] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 6 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 6 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 6
+
+    ## Chain 6 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 6 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[300] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 6 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 6 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 6
+
+    ## Chain 6 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 6 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[1] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 6 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 6 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 6
+
+    ## Chain 6 Informational Message: The current Metropolis proposal is about to be rejected because of the following issue:
+
+    ## Chain 6 Exception: Exception: beta_binomial_lpmf: First prior sample size parameter[2] is 0, but must be positive finite! (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 46, column 0 to line 51, column 5) (in '/stornext/HPCScratch/mangiola.s_HPC_scratch/.Rtemp/Rtmp0tPgFn/model-631856d421f2.stan', line 169, column 4 to line 176, column 6)
+
+    ## Chain 6 If this warning occurs sporadically, such as for highly constrained variable types like covariance matrices, then the sampler is fine,
+
+    ## Chain 6 but if this warning occurs often then your model may be either severely ill-conditioned or misspecified.
+
+    ## Chain 6
+
+    ## Chain 1 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 4 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 2 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 6 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 1 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 5 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 4 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 6 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 2 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 3 Iteration: 100 / 966 [ 10%]  (Warmup) 
+    ## Chain 1 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 1 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 5 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 4 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 4 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 6 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 6 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 2 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 2 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 3 Iteration: 200 / 966 [ 20%]  (Warmup) 
+    ## Chain 5 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 5 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 4 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 1 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 6 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 5 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 3 Iteration: 300 / 966 [ 31%]  (Warmup) 
+    ## Chain 2 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 3 Iteration: 301 / 966 [ 31%]  (Sampling) 
+    ## Chain 4 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 6 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 1 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 5 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 3 Iteration: 400 / 966 [ 41%]  (Sampling) 
+    ## Chain 4 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 6 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 3 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 5 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 2 Iteration: 500 / 966 [ 51%]  (Sampling) 
+    ## Chain 1 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 4 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 6 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 3 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 5 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 4 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 2 Iteration: 600 / 966 [ 62%]  (Sampling) 
+    ## Chain 3 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 6 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 1 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 4 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 5 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 3 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 4 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 6 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 4 finished in 12.4 seconds.
+    ## Chain 2 Iteration: 700 / 966 [ 72%]  (Sampling) 
+    ## Chain 1 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 5 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 6 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 6 finished in 12.7 seconds.
+    ## Chain 3 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 5 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 5 finished in 13.4 seconds.
+    ## Chain 3 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 3 finished in 14.0 seconds.
+    ## Chain 2 Iteration: 800 / 966 [ 82%]  (Sampling) 
+    ## Chain 1 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 1 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 1 finished in 15.4 seconds.
+    ## Chain 2 Iteration: 900 / 966 [ 93%]  (Sampling) 
+    ## Chain 2 Iteration: 966 / 966 [100%]  (Sampling) 
+    ## Chain 2 finished in 16.3 seconds.
+    ## 
+    ## All 6 chains finished successfully.
+    ## Mean chain execution time: 14.0 seconds.
+    ## Total execution time: 16.5 seconds.
+=======
+    ## sccomp says: the composition design matrix has columns: (Intercept), typecancer
+
+    ## sccomp says: the variability design matrix has columns: (Intercept), typecancer
+>>>>>>> master
+
+``` r
+res
+```
+
+<<<<<<< HEAD
+    ## # A tibble: 72 × 13
+    ##    cell_group parameter   c_lower c_effect c_upper    c_pH0    c_FDR v_lower
+    ##    <chr>      <chr>         <dbl>    <dbl>   <dbl>    <dbl>    <dbl>   <dbl>
+    ##  1 B1         (Intercept)  0.587     0.752  0.916  0        0          -5.11
+    ##  2 B1         typecancer  -1.17     -0.850 -0.501  0.000751 0.000250    1.54
+    ##  3 B2         (Intercept)  0.173     0.417  0.662  0.0388   0.00171    -4.45
+    ##  4 B2         typecancer  -1.04     -0.559 -0.0567 0.0746   0.0205      1.48
+    ##  5 B3         (Intercept) -0.561    -0.363 -0.152  0.0593   0.00548    -5.62
+    ##  6 B3         typecancer  -0.545    -0.128  0.301  0.636    0.184       1.76
+    ##  7 BM         (Intercept) -1.28     -1.05  -0.833  0        0          -6.10
+    ##  8 BM         typecancer  -0.734    -0.301  0.145  0.324    0.0821      1.24
+    ##  9 CD4 1      (Intercept)  0.399     0.534  0.673  0        0          -5.50
+    ## 10 CD4 1      typecancer  -0.0465    0.230  0.515  0.417    0.141       1.76
+    ## # … with 62 more rows, and 5 more variables: v_effect <dbl>, v_upper <dbl>,
+    ## #   v_pH0 <dbl>, v_FDR <dbl>, count_data <list>
+=======
+    ## # A tibble: 72 × 14
+    ##    cell_group parameter   covariate c_lower c_effect c_upper    c_pH0     c_FDR
+    ##    <chr>      <chr>       <chr>       <dbl>    <dbl>   <dbl>    <dbl>     <dbl>
+    ##  1 B1         (Intercept) <NA>       1.03      1.24   1.45   0        0        
+    ##  2 B1         typecancer  type      -1.26     -0.915 -0.564  0        0        
+    ##  3 B2         (Intercept) <NA>       0.517     0.766  1.00   0        0        
+    ##  4 B2         typecancer  type      -1.06     -0.635 -0.194  0.0265   0.00428  
+    ##  5 B3         (Intercept) <NA>      -0.554    -0.317 -0.0577 0.167    0.0104   
+    ##  6 B3         typecancer  type      -0.647    -0.196  0.242  0.512    0.129    
+    ##  7 BM         (Intercept) <NA>      -1.23     -0.918 -0.591  0.000501 0.0000501
+    ##  8 BM         typecancer  type      -0.723    -0.282  0.176  0.350    0.0761   
+    ##  9 CD4 1      (Intercept) <NA>       0.226     0.407  0.592  0.0158   0.00109  
+    ## 10 CD4 1      typecancer  type      -0.0857    0.187  0.473  0.538    0.158    
+    ## # … with 62 more rows, and 6 more variables: v_lower <dbl>, v_effect <dbl>,
+    ## #   v_upper <dbl>, v_pH0 <dbl>, v_FDR <dbl>, count_data <list>
+>>>>>>> master
 
 Plot 1D significance plot
 
 ``` r
-plots = res |> sccomp_test() |> plot()
+plots = plot_summary(res)
 ```
 
-    ## Joining with `by = join_by(cell_group, sample)`
-    ## Joining with `by = join_by(cell_group, type)`
+<<<<<<< HEAD
+    ## Running standalone generated quantities after 6 MCMC chains, 1 chain at a time ...
+    ## 
+    ## Chain 1 finished in 0.0 seconds.
+    ## Chain 2 finished in 0.0 seconds.
+    ## Chain 3 finished in 0.0 seconds.
+    ## Chain 4 finished in 0.0 seconds.
+    ## Chain 5 finished in 0.0 seconds.
+    ## Chain 6 finished in 0.0 seconds.
+    ## 
+    ## All 6 chains finished successfully.
+    ## Mean chain execution time: 0.0 seconds.
+    ## Total execution time: 9.7 seconds.
+
+=======
+>>>>>>> master
+    ## Joining, by = c("sample", "cell_group")
+    ## Joining, by = c("cell_group", "type")
 
 ``` r
 plots$credible_intervals_1D
 ```
 
-![](inst/figures/unnamed-chunk-18-1.png)<!-- -->
+![](inst/figures/unnamed-chunk-16-1.png)<!-- -->
 
 Plot 2D significance plot. Data points are cell groups. Error bars are
 the 95% credible interval. The dashed lines represent the default
 threshold fold change for which the probabilities (c_pH0, v_pH0) are
-calculated. pH0 of 0 represent the rejection of the null hypothesis that
-no effect is observed.
+calculated. pH0 of 0 represent the rejection of the null hypothesis,
+that no effect is observed.
 
 This plot is provided only if differential variability has been tested.
 The differential variability estimates are reliable only if the linear
 association between mean and variability for `(intercept)` (left-hand
-side facet) is satisfied. A scatterplot (besides the Intercept) is
-provided for each category of interest. The for each category of
-interest, the composition and variability effects should be generally
+side facet) is satisfied. A scatterplot (beside the Intercept) is
+provided for each of the categories of interest. The for each category
+of interest, the composition and variability effects should be generally
 uncorrelated.
 
 ``` r
 plots$credible_intervals_2D
 ```
 
-![](inst/figures/unnamed-chunk-19-1.png)<!-- -->
-
-## The old framework
-
-The new tidy framework was introduced in 2024, two, understand the
-differences and improvements. Compared to the old framework, please read
-this [blog
-post](https://tidyomics.github.io/tidyomicsBlog/post/2023-12-07-tidy-sccomp/).
+![](inst/figures/unnamed-chunk-17-1.png)<!-- -->

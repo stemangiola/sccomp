@@ -1,4 +1,5 @@
 
+sccomp_stan_models_cache_dir = file.path(path.expand("~"), ".sccomp_models")
 
 # Greater than
 gt = function(a, b){	a > b }
@@ -238,7 +239,6 @@ as_matrix <- function(tbl, rownames = NULL) {
 #'
 #' @description Runs iteratively variational bayes until it suceeds
 #'
-#' @importFrom rstan vb
 #'
 #' @keywords internal
 #' @noRd
@@ -260,25 +260,45 @@ vb_iterative = function(model,
                         tol_rel_obj,
                         additional_parameters_to_save = c(),
                         data,
+                        output_dir = output_dir,
                         seed, 
                         init = "random",
-                        pars = NA,
+                        inference_method,
+                        cores = 1,
                         ...) {
   res = NULL
   i = 0
   while  (is.null(res) & i < 5) {
     res = tryCatch({
-      my_res = vb(
-        model,
-        data = data,
-        output_samples = output_samples,
-        iter = iter,
-        tol_rel_obj = tol_rel_obj,
-        seed = seed+i,
-        init = init,
-        pars=pars,
-        ...
-      )
+
+      if(inference_method=="pathfinder")
+        my_res = model$pathfinder(
+        	data = data,
+        	tol_rel_obj = tol_rel_obj,
+        	output_dir = output_dir,
+        	seed = seed+i,
+        	# init = init,
+        	num_paths=50, 
+          num_threads = cores,
+        	single_path_draws = output_samples / 50 ,
+        	max_lbfgs_iters=100, 
+        	history_size = 100, 
+        	...
+
+        )
+    
+      else if(inference_method=="variational")
+        my_res = model$variational(
+          data = data,
+          output_samples = output_samples,
+          iter = iter,
+          tol_rel_obj = tol_rel_obj,
+          output_dir = output_dir,
+          seed = seed+i,
+          init = init,
+          ...
+        )
+
       boolFalse <- TRUE
       return(my_res)
     },
@@ -297,45 +317,11 @@ vb_iterative = function(model,
 }
 
 
-#' fit_to_counts_rng
-#'
-#' @importFrom tidyr separate
-#' @importFrom tidyr nest
-#' @importFrom rstan summary
-#'
-#' @param fit A fit object
-#' @param adj_prob_theshold fit real
-#'
-#' @keywords internal
-#' @noRd
-fit_to_counts_rng = function(fit, adj_prob_theshold){
 
-  # Define the variables as NULL to avoid CRAN NOTES
-  .variable <- NULL
-  S <- NULL
-  G <- NULL
-  
-  writeLines(sprintf("executing %s", "fit_to_counts_rng"))
-
-  fit %>%
-    rstan::summary("counts_rng",
-                   prob = c(adj_prob_theshold, 1 - adj_prob_theshold)) %$%
-    summary %>%
-    as_tibble(rownames = ".variable") %>%
-    separate(.variable,
-             c(".variable", "S", "G"),
-             sep = "[\\[,\\]]",
-             extra = "drop") %>%
-    mutate(S = S %>% as.integer, G = G %>% as.integer) %>%
-    select(-any_of(c("n_eff", "Rhat", "khat"))) %>%
-    rename(`.lower` = (.) %>% ncol - 1,
-           `.upper` = (.) %>% ncol)
-}
 
 #' draws_to_tibble_x_y
 #'
 #' @importFrom tidyr pivot_longer
-#' @importFrom rstan extract
 #' @importFrom rlang :=
 #'
 #' @param fit A fit object
@@ -356,22 +342,20 @@ draws_to_tibble_x_y = function(fit, par, x, y, number_of_draws = NULL) {
   .value <- NULL
   
   par_names =
-    names(fit) %>% grep(sprintf("%s", par), ., value = TRUE)
+    fit$metadata()$stan_variables %>% grep(sprintf("%s", par), ., value = TRUE)
 
-  fit %>%
-    extract(par, permuted=FALSE) %>%
-    as.data.frame %>%
-    as_tibble() %>%
+  fit$draws(variables = par, format = "draws_df") %>%
     mutate(.iteration = seq_len(n())) %>%
 
     pivot_longer(
-      names_to = c("dummy", ".chain", ".variable", x, y),
+      names_to = "parameter", # c( ".chain", ".variable", x, y),
       cols = contains(par),
-      names_sep = "\\.|\\[|,|\\]|:",
-      names_ptypes = list(
-        ".variable" = character()),
+      #names_sep = "\\.?|\\[|,|\\]|:",
+      # names_ptypes = list(
+      #   ".variable" = character()),
       values_to = ".value"
     ) %>%
+    tidyr::extract(parameter, c(".chain", ".variable", x, y), "([1-9]+)?\\.?([a-zA-Z0-9_\\.]+)\\[([0-9]+),([0-9]+)") |> 
 
     # Warning message:
     # Expected 5 pieces. Additional pieces discarded
@@ -381,7 +365,6 @@ draws_to_tibble_x_y = function(fit, par, x, y, number_of_draws = NULL) {
       !!as.symbol(x) := as.integer(!!as.symbol(x)),
       !!as.symbol(y) := as.integer(!!as.symbol(y))
     ) %>%
-    select(-dummy) %>%
     arrange(.variable, !!as.symbol(x), !!as.symbol(y), .chain) %>%
     group_by(.variable, !!as.symbol(x), !!as.symbol(y)) %>%
     mutate(.draw = seq_len(n())) %>%
@@ -391,42 +374,9 @@ draws_to_tibble_x_y = function(fit, par, x, y, number_of_draws = NULL) {
 
 }
 
-draws_to_tibble_x = function(fit, par, x, number_of_draws = NULL) {
 
-  # Define the variables as NULL to avoid CRAN NOTES
-  dummy <- NULL
-  .variable <- NULL
-  .chain <- NULL
-  .iteration <- NULL
-  .draw <- NULL
-  .value <- NULL
-  
-  par_names = names(fit) %>% grep(sprintf("%s", par), ., value = TRUE)
-
-  fit %>%
-    rstan::extract(par_names, permuted=FALSE) %>%
-    as.data.frame %>%
-    as_tibble() %>%
-    mutate(.iteration = seq_len(n())) %>%
-    pivot_longer(names_to = c("dummy", ".chain", ".variable", x),  cols = contains(par), names_sep = "\\.|\\[|,|\\]|:", values_to = ".value") %>%
-
-    mutate(
-      !!as.symbol(x) := as.integer(!!as.symbol(x)),
-    ) %>%
-
-    select(-dummy) %>%
-    arrange(.variable, !!as.symbol(x), .chain) %>%
-    group_by(.variable, !!as.symbol(x)) %>%
-    mutate(.draw = seq_len(n())) %>%
-    ungroup() %>%
-    select(!!as.symbol(x), .chain, .iteration, .draw ,.variable ,     .value)
-
-}
-
-# Import necessary functions from other packages
 #' @importFrom tidyr separate
 #' @importFrom purrr when
-#' @importFrom rstan summary
 #' 
 #' @param fit A fit object from a statistical model, from the 'rstan' package.
 #' @param par A character vector specifying the parameters to extract from the fit object.
@@ -440,32 +390,26 @@ summary_to_tibble = function(fit, par, x, y = NULL, probs = c(0.025, 0.25, 0.50,
   
   # Extract parameter names from the fit object that match the 'par' argument
   par_names = names(fit) %>% grep(sprintf("%s", par), ., value = TRUE)
-  
-  # Handling potential null value in the fit object's method attribute
-  # Avoiding a bug by setting a default method if none is specified
-  if(fit@stan_args[[1]]$method %>% is.null) fit@stan_args[[1]]$method = "hmc"
-  
-  # Extracting the summary of the specified parameters with the given probabilities
-  summary = 
-    fit %>%
-    rstan::summary(par_names, probs = probs) %$%
-    summary %>%
-    as_tibble(rownames = ".variable") # Convert the summary to a tibble for easier handling
-  
-  # Separate the variable names in the summary based on the presence of 'y'
-  # This process involves splitting the variable names into different columns
-  if(is.null(y)) {
-    summary = summary |> 
-      tidyr::separate(col = .variable,  into = c(".variable", x, y), sep="\\[|,|\\]", convert = TRUE, extra="drop")
-  } else {
-    summary = summary |> 
-      tidyr::separate(col = .variable,  into = c(".variable", x, y), sep="\\[|,|\\]", convert = TRUE, extra="drop")
-  }
-  
-  # Filter the summary to only include rows where the variable matches 'par'
-  summary |> filter(.variable == par)
-}
 
+  # Avoid bug
+  #if(fit@stan_args[[1]]$method %>% is.null) fit@stan_args[[1]]$method = "hmc"
+
+  summary = 
+    fit$summary(variables = par, "mean", ~quantile(.x, probs = probs,  na.rm=TRUE)) %>%
+    rename(.variable = variable ) %>%
+
+    when(
+      is.null(y) ~ (.) %>% tidyr::separate(col = .variable,  into = c(".variable", x, y), sep="\\[|,|\\]", convert = TRUE, extra="drop"),
+      ~ (.) %>% tidyr::separate(col = .variable,  into = c(".variable", x, y), sep="\\[|,|\\]", convert = TRUE, extra="drop")
+    )
+  
+  # summaries are returned only for HMC
+  if(!"n_eff" %in% colnames(summary)) summary = summary |> mutate(n_eff = NA)
+  if(!"R_k_hat" %in% colnames(summary)) summary = summary |> mutate(R_k_hat = NA)
+  
+  summary
+
+}
 
 #' @importFrom rlang :=
 label_deleterious_outliers = function(.my_data){
@@ -503,9 +447,10 @@ label_deleterious_outliers = function(.my_data){
 
 }
 
+#' @importFrom readr write_file
 fit_model = function(
   data_for_model, model, censoring_iteration = 1, cores = detectCores(), quantile = 0.95,
-  warmup_samples = 300, approximate_posterior_inference = TRUE, verbose = FALSE,
+  warmup_samples = 300, approximate_posterior_inference = NULL, inference_method, verbose = FALSE,
   seed , pars = c("beta", "alpha", "prec_coeff","prec_sd"), output_samples = NULL, chains=NULL, max_sampling_iterations = 20000
 )
 {
@@ -531,13 +476,13 @@ fit_model = function(
     
   }}
     
-
   # Find optimal number of chains
   if(is.null(chains))
     chains =
       find_optimal_number_of_chains(
         how_many_posterior_draws = output_samples,
-        warmup = warmup_samples
+        warmup = warmup_samples,
+        parallelisation_start_penalty = 100
       ) %>%
       min(cores)
 
@@ -545,40 +490,62 @@ fit_model = function(
     prec_coeff = c(5,0),
     prec_sd = 1,
     alpha = matrix(c(rep(5, data_for_model$M), rep(0, (data_for_model$A-1) *data_for_model$M)), nrow = data_for_model$A, byrow = TRUE),
-    beta_raw_raw = matrix(rep(0, data_for_model$C * (data_for_model$M-1)), nrow = data_for_model$C, byrow = TRUE)
-  )
+    beta_raw_raw = matrix(0, data_for_model$C , data_for_model$M-1) ,
+    mix_p = 0.1 
+   )
 
+  if(data_for_model$N_random_intercepts>0){
+    init_list$random_intercept_raw = matrix(0, data_for_model$N_grouping  , data_for_model$M-1) |> as.data.frame()  
+    init_list$random_intercept_sigma_mu = 0.5 |> as.array()
+    init_list$random_intercept_sigma_sigma = 0.2 |> as.array()
+    init_list$random_intercept_sigma_raw = matrix(0, data_for_model$M-1 , data_for_model$how_many_factors_in_random_design)
+    init_list$sigma_correlation_factor = matrix(0, data_for_model$how_many_factors_in_random_design  , data_for_model$how_many_factors_in_random_design )
+    init_list$zero_random_intercept = rep(0, size = 1) |> as.array()
+    
+  }
+ 
+  
   init = map(1:chains, ~ init_list) %>%
     setNames(as.character(1:chains))
-  
+
+  output_directory = "sccomp_draws_files"
+  dir.create(output_directory, showWarnings = FALSE)
+
   # Fit
-  if(!approximate_posterior_inference)
-    sampling(
-      model,
-      data = data_for_model,
-      chains = chains,
-      cores = chains,
-      iter = as.integer(output_samples /chains) + warmup_samples,
-      warmup = warmup_samples,
-      refresh = ifelse(verbose, 1000, 0),
-      seed = seed,
-      pars = pars,
-      save_warmup = FALSE,
-      init = map(1:chains, ~ init_list)  |> 
-        setNames(as.character(1:chains))
-    ) %>%
+  mod = load_model("glm_multi_beta_binomial")
+  
+  
+  if(inference_method == "hmc"){
+#mod$compile()
+      mod$sample(
+        data = data_for_model ,
+        chains = chains,
+        parallel_chains = chains,
+        threads_per_chain = 1,
+        iter_warmup = warmup_samples,
+        iter_sampling = as.integer(output_samples /chains),
+        #refresh = ifelse(verbose, 1000, 0),
+        seed = seed,
+        save_warmup = FALSE,
+        init = init,
+        output_dir = output_directory
+      ) %>%
       suppressWarnings()
 
+}
   else
     vb_iterative(
-      model,
+      mod,
       output_samples = output_samples ,
       iter = 10000,
       tol_rel_obj = 0.01,
       data = data_for_model, refresh = ifelse(verbose, 1000, 0),
       seed = seed,
-      init = init_list,
-      pars = pars
+      output_dir = output_directory,
+      init = pf , #list(init_list),
+      inference_method = inference_method, 
+      cores = cores,
+      psis_resample = FALSE
     ) %>%
       suppressWarnings()
 
@@ -588,7 +555,6 @@ fit_model = function(
 
 #' @importFrom purrr map2_lgl
 #' @importFrom tidyr pivot_wider
-#' @importFrom rstan extract
 #' @importFrom rlang :=
 #'
 #' @keywords internal
@@ -608,6 +574,7 @@ parse_fit = function(data_for_model, fit, censoring_iteration = 1, chains){
 
 #' @importFrom purrr map2_lgl
 #' @importFrom tidyr pivot_wider
+#' @importFrom tidyr spread
 #' @importFrom stats C
 #' @importFrom rlang :=
 #' @importFrom tibble enframe
@@ -697,8 +664,33 @@ alpha_to_CI = function(fitted, censoring_iteration = 1, false_positive_rate, fac
 }
 
 
+#' Get Random Intercept Design 2
+#'
+#' This function processes the formula composition elements in the data and creates design matrices
+#' for random intercept models.
+#'
+#' @param .data_ A data frame containing the data.
+#' @param .sample A quosure representing the sample variable.
+#' @param formula_composition A data frame containing the formula composition elements.
+#' 
+#' @return A data frame with the processed design matrices for random intercept models.
+#' 
 #' @importFrom glue glue
 #' @importFrom magrittr subtract
+#' @importFrom purrr map2
+#' @importFrom dplyr mutate
+#' @importFrom dplyr select
+#' @importFrom dplyr pull
+#' @importFrom dplyr filter
+#' @importFrom dplyr left_join
+#' @importFrom dplyr mutate_all
+#' @importFrom dplyr mutate_if
+#' @importFrom dplyr as_tibble
+#' @importFrom tidyr pivot_longer
+#' @importFrom rlang enquo
+#' @importFrom rlang quo_name
+#' @importFrom tidyselect all_of
+#' @importFrom readr type_convert
 #' @noRd
 get_random_intercept_design2 = function(.data_, .sample, formula_composition ){
 
@@ -766,8 +758,34 @@ get_random_intercept_design2 = function(.data_, .sample, formula_composition ){
  }
 
 
+#' Get Random Intercept Design
+#'
+#' This function processes random intercept elements in the data and creates design matrices
+#' for random intercept models.
+#'
+#' @param .data_ A data frame containing the data.
+#' @param .sample A quosure representing the sample variable.
+#' @param random_intercept_elements A data frame containing the random intercept elements.
+#' 
+#' @return A data frame with the processed design matrices for random intercept models.
+#' 
 #' @importFrom glue glue
 #' @importFrom magrittr subtract
+#' @importFrom dplyr select
+#' @importFrom dplyr mutate
+#' @importFrom dplyr pull
+#' @importFrom dplyr if_else
+#' @importFrom dplyr distinct
+#' @importFrom dplyr group_by
+#' @importFrom dplyr summarise
+#' @importFrom dplyr set_names
+#' @importFrom purrr map_lgl
+#' @importFrom purrr pmap
+#' @importFrom purrr map_int
+#' @importFrom tidyr with_groups
+#' @importFrom rlang enquo
+#' @importFrom rlang quo_name
+#' @importFrom tidyselect all_of
 #' @noRd
 get_random_intercept_design = function(.data_, .sample, random_intercept_elements ){
 
@@ -906,6 +924,31 @@ get_design_matrix = function(.data_spread, formula, .sample){
   design_matrix
 }
 
+
+#' Check Random Intercept Design
+#'
+#' This function checks the validity of the random intercept design in the data.
+#'
+#' @param .data A data frame containing the data.
+#' @param factor_names A character vector of factor names.
+#' @param random_intercept_elements A data frame containing the random intercept elements.
+#' @param formula The formula used for the model.
+#' @param X The design matrix.
+#' 
+#' @return A data frame with the checked random intercept elements.
+#' 
+#' @importFrom dplyr nest
+#' @importFrom dplyr mutate
+#' @importFrom dplyr select
+#' @importFrom dplyr pull
+#' @importFrom dplyr filter
+#' @importFrom dplyr distinct
+#' @importFrom dplyr set_names
+#' @importFrom tidyr unite
+#' @importFrom purrr map2
+#' @importFrom stringr str_subset
+#' @importFrom readr type_convert
+#' @noRd
 check_random_intercept_design = function(.data, factor_names, random_intercept_elements, formula, X){
 
   # Define the variables as NULL to avoid CRAN NOTES
@@ -1116,6 +1159,10 @@ data_spread_to_model_input =
     A = ncol(XA);
     Ar = nrow(XA);
 
+
+
+
+
     factor_names = parse_formula(formula)
     factor_names_variability = parse_formula(formula_variability)
     cell_cluster_names = .data_spread %>% select(-!!.sample, -any_of(factor_names), -exposure, -!!.grouping_for_random_intercept) %>% colnames()
@@ -1201,6 +1248,7 @@ data_spread_to_model_input =
     }
     
     
+    
     data_for_model =
       list(
         N = .data_spread %>% nrow(),
@@ -1228,6 +1276,9 @@ data_spread_to_model_input =
         group_factor_indexes_for_covariance = group_factor_indexes_for_covariance,
         how_many_groups = how_many_groups,
         how_many_factors_in_random_design = how_many_factors_in_random_design,
+
+        # For parallel chains
+        grainsize = 1,
         
         ## LOO
         enable_loo = FALSE
@@ -1425,8 +1476,10 @@ find_optimal_number_of_chains = function(how_many_posterior_draws = 100,
                                          max_number_to_check = 100, warmup = 200, parallelisation_start_penalty = 100) {
 
 
+
   # Define the variables as NULL to avoid CRAN NOTES
   chains <- NULL
+
 
   chains_df =
     tibble(chains = seq_len(max_number_to_check)) %>%
@@ -1509,30 +1562,27 @@ get_probability_non_zero_ = function(fit, parameter, prefix = "", test_above_log
   
   
 
-  draws = rstan::extract(fit, parameter)[[1]]
+  draws = fit$draws(
+      variables = parameter,
+      inc_warmup = FALSE,
+      format = getOption("cmdstanr_draws_format", "draws_matrix")
+    )
 
   total_draws = dim(draws)[1]
 
-
   bigger_zero =
     draws %>%
-    apply(2, function(y){
-      y %>%
-        apply(2, function(x) (x>test_above_logit_fold_change) %>% which %>% length)
-    })
-
+      apply(2, function(x) (x>test_above_logit_fold_change) %>% which %>% length)
 
   smaller_zero =
     draws %>%
-    apply(2, function(y){
-      y %>%
         apply(2, function(x) (x< -test_above_logit_fold_change) %>% which %>% length)
-    })
-
 
   (1 - (pmax(bigger_zero, smaller_zero) / total_draws)) %>%
-    as.data.frame() %>%
-    rowid_to_column(var = "M")
+    enframe() %>%
+    tidyr::extract(name, c("C", "M"), ".+\\[([0-9]+),([0-9]+)\\]") %>%
+    mutate(across(c(C, M), ~ as.integer(.x))) %>%
+    tidyr::spread(C, value)
 
 }
 
@@ -2289,7 +2339,7 @@ draws_to_statistics = function(draws, false_positive_rate, test_composition_abov
     mutate(pH0 =  (1 - (pmax(bigger_zero, smaller_zero) / n))) |>
     with_groups(parameter, ~ mutate(.x, FDR = get_FDR(pH0))) |>
 
-    select(!!.cell_group, M, parameter, lower, effect, upper, pH0, FDR, n_eff, R_k_hat) |>
+    select(!!.cell_group, M, parameter, lower, effect, upper, pH0, FDR, any_of(c("n_eff", "R_k_hat"))) |>
     suppressWarnings()
 
   # Setting up names separately because |> is not flexible enough
@@ -2544,7 +2594,7 @@ get_abundance_contrast_draws = function(.data, contrasts){
 
     convergence_df =
       convergence_df |> 
-      select(!!.cell_group, parameter, n_eff, R_k_hat) |>
+      select(!!.cell_group, parameter, any_of(c("n_eff", "R_k_hat"))) |>
       suppressWarnings()
 
   draws |>
@@ -2608,7 +2658,7 @@ get_variability_contrast_draws = function(.data, contrasts){
     select(!!.cell_group, everything())
 
   # If no contrasts of interest just return an empty data frame
-  if(ncol(draws)==5) return(draws |> distinct(M))
+  if(ncol(draws)==5) return(draws |> distinct(M, !!.cell_group))
 
   # Get convergence
   convergence_df =
@@ -2643,7 +2693,7 @@ get_variability_contrast_draws = function(.data, contrasts){
 
     convergence_df =
     convergence_df |> 
-      select(!!.cell_group, parameter, n_eff, R_k_hat) |>
+      select(!!.cell_group, parameter, any_of(c("n_eff", "R_k_hat"))) |>
       suppressWarnings()
 
 
@@ -2672,19 +2722,10 @@ replicate_data = function(.data,
 
   # Select model based on noise model
   noise_model = attr(.data, "noise_model")
-  
-  if (noise_model == "multi_beta_binomial") {
-    my_model = stanmodels$glm_multi_beta_binomial_generate_date
-  } else if (noise_model == "dirichlet_multinomial") {
-    my_model = get_model_from_data("model_glm_dirichlet_multinomial_generate_quantities.rds", glm_dirichlet_multinomial_generate_quantities)
-  }
-
 
   model_input = attr(.data, "model_input")
   .sample = attr(.data, ".sample")
   .cell_group = attr(.data, ".cell_group")
-
-  fit_matrix = as.matrix(attr(.data, "fit") )
 
   # Composition
   if(is.null(formula_composition)) formula_composition =  .data |> attr("formula_composition")
@@ -2858,27 +2899,39 @@ replicate_data = function(.data,
   }
 
   # New X
+  model_input$X_original = model_input$X
   model_input$X = new_X
   model_input$Xa = new_Xa
+  model_input$N_original = model_input$N
   model_input$N = nrow_new_data
   model_input$exposure = new_exposure
 
   model_input$X_random_intercept = new_X_random_intercept
   model_input$N_grouping_new = ncol(new_X_random_intercept)
 
+
+  
+  number_of_draws_in_the_fit = attr(.data, "fit") |>  get_output_samples()
+  
   # To avoid error in case of a NULL posterior sample
-  number_of_draws = min(number_of_draws, nrow(fit_matrix))
+  number_of_draws = min(number_of_draws, number_of_draws_in_the_fit)
+  
+  # Load model
+  mod_rng = load_model("glm_multi_beta_binomial_generate_data")
+  
+  
   # Generate quantities
-  rstan::gqs(
-    my_model,
-    draws =  fit_matrix[sample(seq_len(nrow(fit_matrix)), size=number_of_draws),, drop=FALSE],
-    data = model_input |> c(
+  mod_rng$generate_quantities(
+    attr(.data, "fit")$draws(format = "matrix")[
+      sample(seq_len(number_of_draws_in_the_fit), size=number_of_draws),, drop=FALSE
+    ],
+    data = model_input |> c(list(
 
       # Add subset of coefficients
       length_X_which = length(X_which),
       length_XA_which = length(XA_which),
-      X_which,
-      XA_which,
+      X_which = X_which,
+      XA_which = XA_which,
 
       # Random intercept
       X_random_intercept_which = X_random_intercept_which,
@@ -2887,11 +2940,17 @@ replicate_data = function(.data,
       # Should I create intercept for generate quantities
       create_intercept = create_intercept
 
-    ),
-    seed = mcmc_seed
+    )),
+    seed = mcmc_seed, 
+    threads_per_chain = 1
   )
 
 
+
+  
+  
+  
+  
 }
 
 get_model_from_data = function(file_compiled_model, model_code){
@@ -3200,3 +3259,148 @@ add_class = function(var, name) {
 
   var
 }
+
+
+#' Get Output Samples from a Stan Fit Object
+#'
+#' This function retrieves the number of output samples from a Stan fit object, 
+#' supporting different methods (MHC and Variational) based on the available data within the object.
+#'
+#' @param fit A `stanfit` object, which is the result of fitting a model via Stan.
+#' @return The number of output samples used in the Stan model. 
+#'         Returns from MHC if available, otherwise from Variational inference.
+#' @examples
+#' # Assuming 'fit' is a stanfit object obtained from running a Stan model
+#' samples_count = get_output_samples(fit)
+#'
+get_output_samples = function(fit){
+  
+  # Check if the output_samples field is present in the metadata of the fit object
+  # This is generally available when the model is fit using MHC (Markov chain Monte Carlo)
+  if(!is.null(fit$metadata()$output_samples)) {
+    # Return the output_samples from the metadata
+    fit$metadata()$output_samples
+  }
+  
+  # If the output_samples field is not present, check for iter_sampling
+  # This occurs typically when the model is fit using Variational inference methods
+  else if(!is.null(fit$metadata()$iter_sampling)) {
+    # Return the iter_sampling from the metadata
+    fit$metadata()$iter_sampling
+  }
+  else
+    fit$metadata()$num_psis_draws
+}
+
+
+
+
+
+#' Load, Compile, and Cache a Stan Model
+#'
+#' This function attempts to load a precompiled Stan model using the `instantiate` package.
+#' If the model is not found, it will locate the Stan model file within the `sccomp` package,
+#' compile it using `cmdstanr`, and save the compiled model to the cache directory.
+#'
+#' @param name A character string representing the name of the Stan model.
+#' @param cache_dir A character string representing the path to the cache directory.
+#' 
+#' @return A compiled Stan model object.
+#' 
+#' @importFrom instantiate stan_package_model
+#' @importFrom cmdstanr cmdstan_model
+#' @export
+#' @examples
+#' \dontrun{
+#'   model <- load_model("glm_multi_beta_binomial_", "~/cache")
+#' }
+load_model <- function(name, cache_dir = sccomp_stan_models_cache_dir) {
+  
+  
+  # tryCatch({
+  #   # Attempt to load a precompiled Stan model using the instantiate package
+  #   instantiate::stan_package_model(
+  #     name = name,
+  #     package = "sccomp"
+  #   )
+  # }, error = function(e) {
+    # Try to load the model from cache
+  cache_dir |> dir.create(showWarnings = FALSE, recursive = TRUE)
+    cache_file <- file.path(cache_dir, paste0(name, ".rds"))
+    if (file.exists(cache_file)) {
+      message("Loading model from cache...")
+      return(readRDS(cache_file))
+    }
+    
+    # If loading the precompiled model fails, find the Stan model file within the package
+    message("Precompiled model not found. Compiling the model...")
+    stan_model_path <- system.file("stan", paste0(name, ".stan"), package = "sccomp")
+    
+    # Compile the Stan model using cmdstanr with threading support enabled
+    mod <- cmdstan_model(
+      stan_model_path, 
+      cpp_options = list(stan_threads = TRUE),
+      force_recompile = TRUE
+    )
+    
+    # Save the compiled model object to cache
+    saveRDS(mod, file = cache_file)
+    message("Model compiled and saved to cache successfully.")
+    
+    return(mod)
+  # })
+
+}
+
+#' Check and Install cmdstanr and CmdStan
+#'
+#' This function checks if the `cmdstanr` package and CmdStan are installed. 
+#' If they are not installed, it installs them automatically in non-interactive sessions
+#' or asks for permission to install them in interactive sessions.
+#'
+#' @importFrom instantiate stan_cmdstan_exists
+#' @importFrom utils install.packages
+#' @importFrom utils menu
+#' @return NULL
+#' 
+#' @examples
+#' \dontrun{
+#'   check_and_install_cmdstanr()
+#' }
+check_and_install_cmdstanr <- function() {
+  # Check if cmdstanr is installed
+  if (!requireNamespace("cmdstanr", quietly = TRUE)) {
+    message("The 'cmdstanr' package is not installed.")
+    if (interactive()) {
+      install <- menu(c("yes", "no"), title = "Do you want to install 'cmdstanr'?")
+      if (install == 1) {
+        install.packages(pkgs = "cmdstanr", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+        library(cmdstanr)
+      } else {
+        stop("cmdstanr is required to proceed.")
+      }
+    } else {
+      message("Installing 'cmdstanr' package...")
+      install.packages(pkgs = "cmdstanr", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+      library(cmdstanr)
+    }
+  }
+  
+  # Check if CmdStan is installed
+  if (!stan_cmdstan_exists()) {
+    message("CmdStan is not installed.")
+    if (interactive()) {
+      install <- menu(c("yes", "no"), title = "Do you want to install CmdStan?")
+      if (install == 1) {
+        cmdstanr::install_cmdstan()
+      } else {
+        stop("CmdStan is required to proceed.")
+      }
+    } else {
+      message("Installing CmdStan...")
+      cmdstanr::install_cmdstan()
+    }
+  }
+}
+
+

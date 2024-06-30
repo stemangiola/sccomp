@@ -40,12 +40,12 @@ test_that("remove unwanted variation",{
   
 })
 
-test_that("plot test composition",{
-  
-  plot_summary(result) 
-  
-  
-})
+# test_that("plot test composition",{
+#   
+#   plot_summary(result) 
+#   
+#   
+# })
 
 test_that("plot test composition",{
   

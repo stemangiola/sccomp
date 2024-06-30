@@ -13,4 +13,4 @@ data(multipanel_theme)
 \description{
 this object includes the ggplot, theme
 }
-\keyword{internal}
+\keyword{datasets}

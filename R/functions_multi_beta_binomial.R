@@ -14,7 +14,8 @@ sccomp_glm_data_frame_raw = function(.data,
                                      prior_overdispersion_mean_association = list(intercept = c(5, 2), slope = c(0,  0.6), standard_deviation = c(20, 40)),
                                      percent_false_positive =  5,
                                      check_outliers = TRUE,
-                                     variational_inference = TRUE,
+                                     variational_inference = NULL,
+                                     inference_method = "variational",
                                      test_composition_above_logit_fold_change = 0.1, .sample_cell_group_pairs_to_exclude = NULL,
                                      verbose = FALSE,
                                      exclude_priors = FALSE,
@@ -86,7 +87,7 @@ sccomp_glm_data_frame_raw = function(.data,
       prior_overdispersion_mean_association = prior_overdispersion_mean_association,
       percent_false_positive =  percent_false_positive,
       check_outliers = check_outliers,
-      variational_inference = variational_inference,
+      inference_method = inference_method,
       exclude_priors = exclude_priors,
       bimodal_mean_variability_association = bimodal_mean_variability_association,
       enable_loo = enable_loo,
@@ -114,7 +115,8 @@ sccomp_glm_data_frame_counts = function(.data,
                                         prior_overdispersion_mean_association = list(intercept = c(5, 2), slope = c(0,  0.6), standard_deviation = c(20, 40)),
                                         percent_false_positive = 5,
                                         check_outliers = TRUE,
-                                        variational_inference = TRUE,
+                                        variational_inference = NULL,
+                                        inference_method = "variational",
                                         test_composition_above_logit_fold_change = 0.1, .sample_cell_group_pairs_to_exclude = NULL,
                                         verbose = FALSE,
                                         exclude_priors = FALSE,
@@ -195,8 +197,8 @@ sccomp_glm_data_frame_counts = function(.data,
   random_intercept_elements = parse_formula_random_intercept(formula_composition)
   
   # Variational only if no random intercept
-  if(variational_inference & random_intercept_elements |> filter(factor != "(Intercept)") |> nrow() > 0)
-    stop("sccomp says: for random effect modelling plese use `variational_inference` = FALSE, for the full Bayes HMC inference.")
+  if(inference_method=="variational" & random_intercept_elements |> filter(factor != "(Intercept)") |> nrow() > 0)
+    stop("sccomp says: for random effect modelling plese use `inference_method` = \"hmc\", for the full Bayes HMC inference.")
   
   # If no random intercept fake it
   if(nrow(random_intercept_elements)>0){
@@ -238,7 +240,7 @@ sccomp_glm_data_frame_counts = function(.data,
     data_spread_to_model_input(
       formula_composition, !!.sample, !!.cell_group, !!.count,
       truncation_ajustment = 1.1,
-      approximate_posterior_inference = variational_inference,
+      approximate_posterior_inference = inference_method %in% c("variational", "pathfinder"),
       formula_variability = formula_variability,
       contrasts = contrasts,
       bimodal_mean_variability_association = bimodal_mean_variability_association,
@@ -286,7 +288,7 @@ sccomp_glm_data_frame_counts = function(.data,
       stanmodels$glm_multi_beta_binomial,
       cores= cores,
       quantile = CI,
-      approximate_posterior_inference = variational_inference,
+      inference_method = inference_method,
       verbose = verbose,
       seed = mcmc_seed,
       max_sampling_iterations = max_sampling_iterations,
@@ -321,8 +323,8 @@ sccomp_glm_data_frame_counts = function(.data,
     select(-contains("_FDR"), -contains("_pH0")) 
   
   
-  if(variational_inference & max(na.omit(estimate_tibble$c_R_k_hat)) > 4)
-    warning("sccomp says: using variational inference, c_R_k_hat resulted too high for some parameters, indicating lack of convergence of the model. We reccomend using variational_inference = FALSE to use the state-of-the-art (although slower) HMC sampler.")
+  if(inference_method %in% c("variational") && max(na.omit(estimate_tibble$c_R_k_hat)) > 4)
+    warning("sccomp says: using variational inference, c_R_k_hat resulted too high for some parameters, indicating lack of convergence of the model. We reccomend using inference_method = \"hmc\" to use the state-of-the-art (although slower) HMC sampler.")
   
   estimate_tibble
   
@@ -377,14 +379,7 @@ get_mean_precision = function(fit, data_for_model){
 
 get_mean_precision_association = function(fit){
   c(
-    fit %>%
-      summary("prec_coeff") %$%
-      summary %>%
-      .[,1] ,
-
-    fit %>%
-      summary("prec_sd") %$%
-      summary %>%
-      .[,1]
+    fit$summary("prec_coeff")[,2] |> set_names("prec_coeff") ,
+    fit$summary("prec_sd")[,2] |> set_names("prec_sd")
   )
 }

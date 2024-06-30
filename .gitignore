@@ -2,8 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
-README_cache/*
-vignettes/introduction_cache*
+.Rapp.history
+inst/doc
 sccomp.Rproj
 Meta
 doc

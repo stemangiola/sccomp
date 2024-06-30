@@ -48,6 +48,27 @@ functions{
     return y;
   }
 
+
+  real partial_sum_lpmf(array[] int slice_y,
+
+                        int start,
+                        int end,
+                        array[] int exposure_array,
+                        vector mu_array,
+                        vector precision_array
+                        ) {
+
+return beta_binomial_lupmf(
+    slice_y |
+    exposure_array[start:end],
+    (mu_array[start:end] .* precision_array[start:end]),
+    (1.0 - mu_array[start:end]) .* precision_array[start:end]
+  ) ;
+
+}
+
+
+
   row_vector average_by_col(matrix X) {
     int rows_X = rows(X);
     int cols_X = cols(X);
@@ -58,6 +79,8 @@ functions{
     }
     
     return means;
+
+
   }
 
   real abundance_variability_regression(row_vector variability, row_vector abundance, array[] real prec_coeff, real prec_sd, int bimodal_mean_variability_association, real mix_p){
@@ -183,6 +206,7 @@ functions{
 		return(random_intercept);
 }
 
+
 }
 data{
   int<lower=1> N;
@@ -218,6 +242,10 @@ data{
   int<lower=0, upper=1> bimodal_mean_variability_association;
   int<lower=0, upper=1> use_data;
 
+
+  // Parallel chain
+  int<lower=1> grainsize;
+
   // Does the design icludes intercept
   int <lower=0, upper=1> intercept_in_design;
 
@@ -240,6 +268,8 @@ data{
 
   // LOO
   int<lower=0, upper=1> enable_loo;
+
+
 }
 transformed data{
   vector[2*M] Q_r = Q_sum_to_zero_QR(M);
@@ -252,9 +282,11 @@ transformed data{
   array[N*M] int exposure_array;
   // EXCEPTION MADE FOR WINDOWS GENERATE QUANTITIES IF RANDOM EFFECT DO NOT EXIST
   int N_grouping_WINDOWS_BUG_FIX = max(N_grouping, 1);
+
   // thin and scale the QR decomposition
   Q_ast = qr_thin_Q(X) * sqrt(N - 1);
   R_ast_inverse = inverse(qr_thin_R(X) / sqrt(N - 1));
+  
   // If I get crazy diagonal matrix omit it
   if(N_random_intercepts>0) { 
     if(max(R_ast_inverse)>1000 )
@@ -262,9 +294,9 @@ transformed data{
     Q_ast = X;
     R_ast_inverse = diag_matrix(rep_vector(1.0, C));
   }
+  
   // Data vectorised
   y_array =  to_array_1d(y);
-  truncation_down_array = to_array_1d(truncation_down);
   exposure_array = rep_each(exposure, M);
 }
 parameters{
@@ -277,6 +309,7 @@ parameters{
   
   // Random intercept // matrix with N_groupings rows and number of cells (-1) columns
   matrix[N_grouping * (N_random_intercepts>0), M-1] random_intercept_raw;
+  
   // sd of random intercept
   array[N_random_intercepts>0] real random_intercept_sigma_mu;
   array[N_random_intercepts>0] real random_intercept_sigma_sigma;
@@ -337,6 +370,7 @@ transformed parameters{
     mu = mu + append_row((X_random_intercept * random_intercept)', rep_row_vector(0, N));
   }
 
+
   // Calculate proportions
   for(n in 1:N)  mu[,n] = softmax(mu[,n]);
 
@@ -344,19 +378,23 @@ transformed parameters{
   mu_array = to_vector(mu);
   precision_array = to_vector(exp(precision));
   
-
   
 }
 model{
 
   // Fit main distribution
   if(use_data == 1){
-    target += beta_binomial_lpmf(
-      y_array[truncation_not_idx] |
+    
+    target +=  reduce_sum(
+      partial_sum_lupmf,
+      y_array[truncation_not_idx],
+      grainsize,
       exposure_array[truncation_not_idx],
-      (mu_array[truncation_not_idx] .* precision_array[truncation_not_idx]),
-      ((1.0 - mu_array[truncation_not_idx]) .* precision_array[truncation_not_idx])
-      ) ;
+      mu_array[truncation_not_idx],
+      precision_array[truncation_not_idx]
+    );
+    
+
   }
 
 
@@ -418,7 +456,10 @@ model{
   prec_coeff[1] ~ normal(prior_prec_intercept[1], prior_prec_intercept[2]);
   prec_coeff[2] ~ normal(prior_prec_slope[1],prior_prec_slope[2]);
   prec_sd ~ gamma(prior_prec_sd[1],prior_prec_sd[2]);
-
+  prec_sd ~ std_normal();
+  prec_coeff ~ std_normal();
+  to_vector(beta_raw_raw) ~ std_normal();
+  
   // Random intercept
   if(N_random_intercepts>0){
     for(m in 1:(M-1)) random_intercept_raw[,m] ~ std_normal();

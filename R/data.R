@@ -33,93 +33,14 @@
 #'
 "sce_obj"
 
-#' glm_dirichlet_multinomial
-#'
-#' @description
-#' This object is mostly for internal use and comparative purposes, if the dirichlet_multinomial is chosen as noise model.
-#'
-#' @importFrom utils data
-#'
-#' @keywords internal
-#'
-#' @format  A text file containing stan code for the Dirichlet model.
-#' @usage data(glm_dirichlet_multinomial)
-#'
-#'
-"glm_dirichlet_multinomial"
-
-#' glm_dirichlet_multinomial_generate_quantities
-#'
-#' @description
-#' This object is mostly for internal use and comparative purposes, if the dirichlet_multinomial is chosen as noise model.
-#'
-#' @importFrom utils data
-#'
-#'
-#' @keywords internal
-#'
-#' @format  A text file containing stan code for the Dirichlet model.
-#' @usage data(glm_dirichlet_multinomial_generate_quantities)
-#'
-#'
-"glm_dirichlet_multinomial_generate_quantities"
-
-#' glm_dirichlet_multinomial_imputation
-#'
-#' @description
-#' This object is mostly for internal use and comparative purposes, if the dirichlet_multinomial is chosen as noise model.
-#'
-#' @importFrom utils data
-#'
-#' @keywords internal
-#'
-#' @format  A text file containing stan code for the Dirichlet model.
-#' @usage data(glm_dirichlet_multinomial_imputation)
-#'
-#'
-"glm_dirichlet_multinomial_imputation"
-
-#' glm_multi_beta_generate_data
-#'
-#' @description
-#' This object is mostly for internal use and comparative purposes, if the multi_beta is chosen as noise model.
-#'
-#' @importFrom utils data
-#'
-#' @keywords internal
-#'
-#' @format  A text file containing stan code for the Beta only model.
-#' @usage data(glm_multi_beta_generate_data)
-#'
-#'
-"glm_multi_beta_generate_data"
-
-#' glm_multi_beta
-#'
-#' @description
-#' This object is mostly for internal use and comparative purposes, if the multi_beta is chosen as noise model.
-#'
-#' @importFrom utils data
-#'
-#' @keywords internal
-#'
-#' @format  A text file containing stan code for the Beta only model.
-#' @usage data(glm_multi_beta)
-#'
-#'
-"glm_multi_beta"
-
+  
 #' multipanel_theme
 #'
 #' @description
 #' this object includes the ggplot, theme
-#'
-#' @importFrom utils data
-#'
-#' @keywords internal
-#'
 #' @format  A ggplot theme
 #' @usage data(multipanel_theme)
 #'
 #'
 "multipanel_theme"
+

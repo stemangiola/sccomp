@@ -1,6 +1,19 @@
+^\.github$
+^LICENSE\.md$
+^README\.md$
+^README\.rmd$
+^\.gitignore$
 ^sccomp\.Rproj$
+^README_files$
 ^\.Rproj\.user$
-^\.github
+^NOTICE$
+^\.Rhistory$
+^\.Rbuildignore$
+^\.RData$
+^dev$
+sccomp_draws_files*
+src/stanExport*
+src/Rcpp*
 ^\.git
 ^README*
 ^dev
@@ -13,3 +26,4 @@ model_glm_dirichlet_multinomial_imputation.rds
 ^doc$
 ^Meta$
 sccomp_draws_files
+

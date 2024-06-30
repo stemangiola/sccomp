@@ -6,19 +6,17 @@ Authors@R: c(person("Stefano", "Mangiola", email = "mangiolastefano@gmail.com",
                   )
 Description: A robust and outlier-aware method for testing differential tissue composition from single-cell data. This model can infer changes in tissue composition and heterogeneity, and can produce realistic data simulations based on any existing dataset. This model can also transfer knowledge from a large set of integrated datasets to increase accuracy further.
 License: GPL-3 
+URL: https://github.com/stemangiola/sccomp
+BugReports: https://github.com/stemangiola/sccomp/issues
 Encoding: UTF-8
-LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.1
-Biarch: true
-Depends: 
-    R (>= 4.2.0)
-Imports: 
-    methods,
-    Rcpp (>= 0.12.0),
-    RcppParallel (>= 5.0.1),
-    rstantools (>= 2.1.1),
-    rstan (>= 2.26.0),
+Depends: R (>= 4.2.0)
+Imports:
+    instantiate (>= 0.1.0),
+    callr,
+    fs,
+    stats,
     SeuratObject,
     SingleCellExperiment,
     parallel,
@@ -42,42 +40,19 @@ Imports:
     stringr,
     glue
 Suggests:
+    cmdstanr (>= 0.6.0),
+    knitr,
+    rmarkdown,
     BiocStyle,
     testthat (>= 3.0.0),
     markdown,
     knitr,
     loo,
+    prettydoc,
     tidyseurat,
     tidySingleCellExperiment,
-    prettydoc
-Enhances:
-    furrr,
-    extraDistr
-LinkingTo: 
-    BH (>= 1.66.0),
-    Rcpp (>= 0.12.0),
-    RcppEigen (>= 0.3.3.3.0),
-    RcppParallel (>= 5.0.1),
-    rstan (>= 2.26.0),
-    StanHeaders (>= 2.26.0)
-SystemRequirements: GNU make
-VignetteBuilder: 
-    knitr
-RdMacros:
-    lifecycle
-biocViews: 
-    ImmunoOncology, 
-    Normalization, 
-    Sequencing, 
-    RNASeq, 
-    Software, 
-    GeneExpression,
-    Transcriptomics, 
-    SingleCell, 
-    Clustering
-LazyDataCompression: xz
-Config/testthat/edition: 3
-URL: https://github.com/stemangiola/sccomp
-BugReports: https://github.com/stemangiola/sccomp/issues
 Additional_repositories:
     https://mc-stan.org/r-packages/
+SystemRequirements: CmdStan (https://mc-stan.org/users/interfaces/cmdstan)
+LazyData: true
+VignetteBuilder: knitr

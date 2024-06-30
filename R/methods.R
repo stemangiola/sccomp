@@ -19,6 +19,8 @@
 #' @importFrom SingleCellExperiment colData
 #' @importFrom parallel detectCores
 #' @importFrom rlang inform
+#' @importFrom lifecycle is_present
+#' @importFrom lifecycle deprecate_warn
 #'
 #' @param .data A tibble including cell_group name column, sample name column, 
 #'              read counts column (optional depending on the input class), and factor columns.
@@ -100,7 +102,7 @@ sccomp_estimate <- function(.data,
                        cores = detectCores(),
                        bimodal_mean_variability_association = FALSE,
                        percent_false_positive = 5,
-                       variational_inference = TRUE,
+                       inference_method = "pathfinder",
                        prior_mean = list(intercept = c(0,1), coefficients = c(0,1)),
                        prior_overdispersion_mean_association = list(intercept = c(5, 2), slope = c(0,  0.6), standard_deviation = c(10, 20)),
                        .sample_cell_group_pairs_to_exclude = NULL,
@@ -114,12 +116,13 @@ sccomp_estimate <- function(.data,
                        pass_fit = TRUE,
                        
                        # DEPRECATED
-                       approximate_posterior_inference = NULL
+                       approximate_posterior_inference = NULL,
+                       variational_inference = NULL
                        
                        ) {
-  if(variational_inference == TRUE) 
+  if(inference_method == "variational") 
     rlang::inform(
-      message = "sccomp says: From version 1.7.7 the model by default is fit with the variational inference method (variational_inference = TRUE; much faster). For a full Bayesian inference (HMC method; the gold standard) use variational_inference = FALSE.", 
+      message = "sccomp says: From version 1.7.7 the model by default is fit with the variational inference method (inference_method = “variational”; much faster). For a full Bayesian inference (HMC method; the gold standard) use inference_method = \"hmc\".", 
       .frequency = "once", 
       .frequency_id = "variational_message"
     )
@@ -130,6 +133,8 @@ sccomp_estimate <- function(.data,
       .frequency_id = "new_logit_fold_change_threshold"
   )
   
+  # Run the function
+  check_and_install_cmdstanr()
   
   UseMethod("sccomp_estimate", .data)
 }
@@ -146,7 +151,7 @@ sccomp_estimate.Seurat = function(.data,
                                   cores = detectCores(),
                                   bimodal_mean_variability_association = FALSE,
                                   percent_false_positive = 5,
-                                  variational_inference = TRUE,
+                                  inference_method = "pathfinder",
                                   prior_mean = list(intercept = c(0,1), coefficients = c(0,1)),                        
                                   prior_overdispersion_mean_association = list(intercept = c(5, 2), slope = c(0,  0.6), standard_deviation = c(10, 20)),
                                   .sample_cell_group_pairs_to_exclude = NULL,
@@ -160,14 +165,30 @@ sccomp_estimate.Seurat = function(.data,
                                   pass_fit = TRUE,
                                   
                                   # DEPRECATED
-                                  approximate_posterior_inference = NULL){
+                                  approximate_posterior_inference = NULL,
+                                  variational_inference = NULL){
 
   if(!is.null(.count)) stop("sccomp says: .count argument can be used only for data frame input")
 
   # DEPRECATION OF approximate_posterior_inference
   if (is_present(approximate_posterior_inference) & !is.null(approximate_posterior_inference)) {
-    deprecate_warn("1.7.7", "sccomp::sccomp_estimate(approximate_posterior_inference = )", details = "The argument approximate_posterior_inference is now deprecated please use variational_inference. By default variational_inference value is inferred from approximate_posterior_inference.")
-    variational_inference = approximate_posterior_inference == "all"
+    deprecate_warn("1.7.7", "sccomp::sccomp_estimate(approximate_posterior_inference = )", details = "The argument approximate_posterior_inference is now deprecated please use inference_method By default variational_inference value is inferred from approximate_posterior_inference.")
+    
+     inference_method = ifelse(approximate_posterior_inference == "all", "variational","hmc")
+  }
+  
+  # DEPRECATION OF variational_inference
+  if (is_present(variational_inference) & !is.null(variational_inference)) {
+    deprecate_warn("1.7.11", "sccomp::sccomp_estimate(variational_inference = )", details = "The argument variational_inference is now deprecated please use variational_inference. By default inference_method value is inferred from variational_inference")
+    
+    inference_method = ifelse(variational_inference, "variational","hmc")
+  }
+  
+  # DEPRECATION OF variational_inference
+  if (is_present(variational_inference) & !is.null(variational_inference)) {
+    deprecate_warn("1.7.11", "sccomp::sccomp_estimate(variational_inference = )", details = "The argument variational_inference is now deprecated please use variational_inference. By default inference_method value is inferred from variational_inference")
+    
+    inference_method = ifelse(variational_inference, "variational","hmc")
   }
   
   # Prepare column same enquo
@@ -186,7 +207,7 @@ sccomp_estimate.Seurat = function(.data,
       cores = cores,
       bimodal_mean_variability_association = bimodal_mean_variability_association,
       percent_false_positive = percent_false_positive,
-      variational_inference = variational_inference,
+      inference_method = inference_method,
       prior_mean = prior_mean, 
       prior_overdispersion_mean_association = prior_overdispersion_mean_association,
       .sample_cell_group_pairs_to_exclude = !!.sample_cell_group_pairs_to_exclude,
@@ -215,7 +236,7 @@ sccomp_estimate.SingleCellExperiment = function(.data,
                                                 cores = detectCores(),
                                                 bimodal_mean_variability_association = FALSE,
                                                 percent_false_positive = 5,
-                                                variational_inference = TRUE,
+                                                inference_method = "pathfinder",
                                                 prior_mean = list(intercept = c(0,1), coefficients = c(0,1)),                        
                                                 prior_overdispersion_mean_association = list(intercept = c(5, 2), slope = c(0,  0.6), standard_deviation = c(10, 20)),
                                                 .sample_cell_group_pairs_to_exclude = NULL,
@@ -229,7 +250,9 @@ sccomp_estimate.SingleCellExperiment = function(.data,
                                                 pass_fit = TRUE,
                                                 
                                                 # DEPRECATED
-                                                approximate_posterior_inference = NULL) {
+                                                approximate_posterior_inference = NULL,
+                                                variational_inference = NULL) {
+
 
   if(!is.null(.count)) stop("sccomp says: .count argument can be used only for data frame input")
 
@@ -237,9 +260,16 @@ sccomp_estimate.SingleCellExperiment = function(.data,
   # DEPRECATION OF approximate_posterior_inference
   if (is_present(approximate_posterior_inference) & !is.null(approximate_posterior_inference)) {
     deprecate_warn("1.7.7", "sccomp::sccomp_estimate(approximate_posterior_inference = )", details = "The argument approximate_posterior_inference is now deprecated please use variational_inference. By default variational_inference value is inferred from approximate_posterior_inference.")
-    variational_inference = approximate_posterior_inference == "all"
+     inference_method = ifelse(approximate_posterior_inference == "all", "variational","hmc")
   }
 
+  # DEPRECATION OF variational_inference
+  if (is_present(variational_inference) & !is.null(variational_inference)) {
+    deprecate_warn("1.7.11", "sccomp::sccomp_estimate(variational_inference = )", details = "The argument variational_inference is now deprecated please use variational_inference. By default inference_method value is inferred from variational_inference")
+    
+    inference_method = ifelse(variational_inference, "variational","hmc")
+  }
+  
   # Prepare column same enquo
   .sample = enquo(.sample)
   .cell_group = enquo(.cell_group)
@@ -258,7 +288,7 @@ sccomp_estimate.SingleCellExperiment = function(.data,
       cores = cores,
       bimodal_mean_variability_association = bimodal_mean_variability_association,
       percent_false_positive = percent_false_positive,
-      variational_inference = variational_inference,
+      inference_method = inference_method,
       prior_mean = prior_mean, 
       prior_overdispersion_mean_association = prior_overdispersion_mean_association,
       .sample_cell_group_pairs_to_exclude = !!.sample_cell_group_pairs_to_exclude,
@@ -287,7 +317,7 @@ sccomp_estimate.DFrame = function(.data,
                                   cores = detectCores(),
                                   bimodal_mean_variability_association = FALSE,
                                   percent_false_positive = 5,
-                                  variational_inference = TRUE,
+                                  inference_method = "pathfinder",
                                   prior_mean = list(intercept = c(0,1), coefficients = c(0,1)),                        
                                   prior_overdispersion_mean_association = list(intercept = c(5, 2), slope = c(0,  0.6), standard_deviation = c(10, 20)),
                                   .sample_cell_group_pairs_to_exclude = NULL,
@@ -301,7 +331,9 @@ sccomp_estimate.DFrame = function(.data,
                                   pass_fit = TRUE,
                                   
                                   # DEPRECATED
-                                  approximate_posterior_inference = NULL) {
+                                  approximate_posterior_inference = NULL,
+                                  variational_inference = NULL) {
+
 
   if(!is.null(.count)) stop("sccomp says: .count argument can be used only for data frame input")
 
@@ -309,7 +341,14 @@ sccomp_estimate.DFrame = function(.data,
   # DEPRECATION OF approximate_posterior_inference
   if (is_present(approximate_posterior_inference) & !is.null(approximate_posterior_inference)) {
     deprecate_warn("1.7.7", "sccomp::sccomp_estimate(approximate_posterior_inference = )", details = "The argument approximate_posterior_inference is now deprecated please use variational_inference. By default variational_inference value is inferred from approximate_posterior_inference.")
-    variational_inference = approximate_posterior_inference == "all"
+     inference_method = ifelse(approximate_posterior_inference == "all", "variational","hmc")
+  }
+  
+  # DEPRECATION OF variational_inference
+  if (is_present(variational_inference) & !is.null(variational_inference)) {
+    deprecate_warn("1.7.11", "sccomp::sccomp_estimate(variational_inference = )", details = "The argument variational_inference is now deprecated please use variational_inference. By default inference_method value is inferred from variational_inference")
+    
+    inference_method = ifelse(variational_inference, "variational","hmc")
   }
   
   # Prepare column same enquo
@@ -330,7 +369,7 @@ sccomp_estimate.DFrame = function(.data,
       cores = cores,
       bimodal_mean_variability_association = bimodal_mean_variability_association,
       percent_false_positive = percent_false_positive,
-      variational_inference = variational_inference,
+      inference_method = inference_method,
       prior_mean = prior_mean, 
       prior_overdispersion_mean_association = prior_overdispersion_mean_association,
       .sample_cell_group_pairs_to_exclude = !!.sample_cell_group_pairs_to_exclude,
@@ -358,7 +397,7 @@ sccomp_estimate.data.frame = function(.data,
                                       cores = detectCores(),
                                       bimodal_mean_variability_association = FALSE,
                                       percent_false_positive = 5,
-                                      variational_inference = TRUE,
+                                      inference_method = "pathfinder",
                                       prior_mean = list(intercept = c(0,1), coefficients = c(0,1)),                        
                                       prior_overdispersion_mean_association = list(intercept = c(5, 2), slope = c(0,  0.6), standard_deviation = c(10, 20)),
                                       .sample_cell_group_pairs_to_exclude = NULL,
@@ -372,15 +411,24 @@ sccomp_estimate.data.frame = function(.data,
                                       pass_fit = TRUE,
                                       
                                       # DEPRECATED
-                                      approximate_posterior_inference = NULL) {
+                                      approximate_posterior_inference = NULL,
+                                      variational_inference = NULL) {
 
   
   # DEPRECATION OF approximate_posterior_inference
   if (is_present(approximate_posterior_inference) & !is.null(approximate_posterior_inference)) {
     deprecate_warn("1.7.7", "sccomp::sccomp_estimate(approximate_posterior_inference = )", details = "The argument approximate_posterior_inference is now deprecated please use variational_inference. By default variational_inference value is inferred from approximate_posterior_inference.")
-    variational_inference = approximate_posterior_inference == "all"
+     inference_method = ifelse(approximate_posterior_inference == "all", "variational","hmc")
   }
   
+  # DEPRECATION OF variational_inference
+  if (is_present(variational_inference) & !is.null(variational_inference)) {
+    deprecate_warn("1.7.11", "sccomp::sccomp_estimate(variational_inference = )", details = "The argument variational_inference is now deprecated please use variational_inference. By default inference_method value is inferred from variational_inference")
+    
+    inference_method = ifelse(variational_inference, "variational","hmc")
+  }
+  
+
   # Prepare column same enquo
   .sample = enquo(.sample)
   .cell_group = enquo(.cell_group)
@@ -399,7 +447,7 @@ sccomp_estimate.data.frame = function(.data,
       cores = cores,
       bimodal_mean_variability_association = bimodal_mean_variability_association,
       percent_false_positive = percent_false_positive,
-      variational_inference = variational_inference,
+      inference_method = inference_method,
       prior_mean = prior_mean, 
       prior_overdispersion_mean_association = prior_overdispersion_mean_association,
       .sample_cell_group_pairs_to_exclude = !!.sample_cell_group_pairs_to_exclude,
@@ -425,7 +473,7 @@ sccomp_estimate.data.frame = function(.data,
       cores = cores,
       bimodal_mean_variability_association = bimodal_mean_variability_association,
       percent_false_positive = percent_false_positive,
-      variational_inference = variational_inference,
+      inference_method = inference_method,
       prior_mean = prior_mean, 
       prior_overdispersion_mean_association = prior_overdispersion_mean_association,
       .sample_cell_group_pairs_to_exclude = !!.sample_cell_group_pairs_to_exclude,
@@ -461,6 +509,8 @@ sccomp_estimate.data.frame = function(.data,
 #' @importFrom parallel detectCores
 #' @importFrom rlang quo_is_symbolic
 #' @importFrom rlang inform
+#' @importFrom tidyr unnest
+#' @importFrom tidyr nest
 #'
 #' @param .estimate A tibble including a cell_group name column | sample name column | read counts column (optional depending on the input class) | factor columns.
 #' @param percent_false_positive A real between 0 and 100 non included. This used to identify outliers with a specific false positive rate.
@@ -516,18 +566,19 @@ sccomp_estimate.data.frame = function(.data,
 sccomp_remove_outliers <- function(.estimate,
                                    percent_false_positive = 5,
                                    cores = detectCores(),
-                                   variational_inference = TRUE,
+                                   inference_method = "pathfinder",
                                    verbose = TRUE,
                                    mcmc_seed = sample(1e5, 1),
                                    max_sampling_iterations = 20000,
                                    enable_loo = FALSE,
                                    
                                    # DEPRECATED
-                                   approximate_posterior_inference = NULL
+                                   approximate_posterior_inference = NULL,
+                                   variational_inference = NULL
 ) {
-  if(variational_inference == TRUE) 
+  if(inference_method == "variational") 
     rlang::inform(
-      message = "sccomp says: From version 1.7.7 the model by default is fit with the variational inference method (variational_inference = TRUE; much faster). For a full Bayesian inference (HMC method; the gold standard) use variational_inference = FALSE.", 
+      message = "sccomp says: From version 1.7.7 the model by default is fit with the variational inference method (inference_method = “variational”; much faster). For a full Bayesian inference (HMC method; the gold standard) use inference_method = “hmc”.", 
       .frequency = "once", 
       .frequency_id = "variational_message"
     )
@@ -535,25 +586,34 @@ sccomp_remove_outliers <- function(.estimate,
   UseMethod("sccomp_remove_outliers", .estimate)
 }
 
+#' @importFrom readr write_file
 #' @export
 sccomp_remove_outliers.sccomp_tbl = function(.estimate,
                                              percent_false_positive = 5,
                                              cores = detectCores(),
-                                             variational_inference = TRUE,
+                                             inference_method = "pathfinder",
                                              verbose = TRUE,
                                              mcmc_seed = sample(1e5, 1),
                                              max_sampling_iterations = 20000,
                                              enable_loo = FALSE,
                                              
                                              # DEPRECATED
-                                             approximate_posterior_inference = NULL
+                                             approximate_posterior_inference = NULL,
+                                             variational_inference = NULL
 ) {
   
   
   # DEPRECATION OF approximate_posterior_inference
   if (is_present(approximate_posterior_inference) & !is.null(approximate_posterior_inference)) {
     deprecate_warn("1.7.7", "sccomp::sccomp_estimate(approximate_posterior_inference = )", details = "The argument approximate_posterior_inference is now deprecated please use variational_inference. By default variational_inference value is inferred from approximate_posterior_inference.")
-    variational_inference = approximate_posterior_inference == "all"
+     inference_method = ifelse(approximate_posterior_inference == "all", "variational","hmc")
+  }
+  
+  # DEPRECATION OF variational_inference
+  if (is_present(variational_inference) & !is.null(variational_inference)) {
+    deprecate_warn("1.7.11", "sccomp::sccomp_estimate(variational_inference = )", details = "The argument variational_inference is now deprecated please use variational_inference. By default inference_method value is inferred from variational_inference")
+    
+    inference_method = ifelse(variational_inference, "variational","hmc")
   }
   
   # Prepare column same enquo
@@ -590,10 +650,11 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
   # Random intercept
   random_intercept_elements = .estimate |> attr("formula_composition") |> parse_formula_random_intercept()
   
-  rng =  rstan::gqs(
-    stanmodels$glm_multi_beta_binomial_generate_date, 
-    #rstan::stan_model("inst/stan/glm_multi_beta_binomial_generate_date.stan"),
-    draws = .estimate |> attr("fit") |>  as.matrix(), 
+  # Load model
+  mod_rng = load_model("glm_multi_beta_binomial_generate_data")
+
+  rng = mod_rng$generate_quantities(
+    attr(.estimate , "fit")$draws(format = "matrix"),
     
     # This is for the new data generation with selected factors to do adjustment
     data = 
@@ -602,6 +663,8 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
       c(list(
         
         # Add subset of coefficients
+        X_original = data_for_model$X,
+        N_original = data_for_model$N,
         length_X_which = ncol(data_for_model$X),
         length_XA_which = ncol(data_for_model$XA),
         X_which = seq_len(ncol(data_for_model$X)) |> as.array(),
@@ -612,7 +675,10 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
         length_X_random_intercept_which = ncol(data_for_model$X_random_intercept),
         X_random_intercept_which = seq_len(ncol(data_for_model$X_random_intercept)) |> as.array(),
         create_intercept = FALSE
-      ))
+      )),
+    parallel_chains = ifelse(data_for_model$is_vb, 1, attr(.estimate , "fit")$num_chains()), 
+    threads_per_chain = cores
+    
   )
   
   # Free memory
@@ -674,7 +740,7 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
       stanmodels$glm_multi_beta_binomial,
       cores = cores,
       quantile = my_quantile_step_2,
-      approximate_posterior_inference = variational_inference,
+      inference_method = inference_method,
       verbose = verbose,
       seed = mcmc_seed,
       max_sampling_iterations = max_sampling_iterations,
@@ -684,13 +750,15 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
   
   #fit_model(stan_model("inst/stan/glm_multi_beta_binomial.stan"), chains= 4, output_samples = 500, approximate_posterior_inference = FALSE, verbose = TRUE)
   
-  rng2 =  rstan::gqs(
-    stanmodels$glm_multi_beta_binomial_generate_date,
-    #rstan::stan_model("inst/stan/glm_multi_beta_binomial_generate_date.stan"),
-    draws =  as.matrix(fit2),
+  rng2 =  mod_rng$generate_quantities(
+    fit2$draws(format = "matrix"),
+    
+    # This is for the new data generation with selected factors to do adjustment
     data = data_for_model |> c(list(
       
       # Add subset of coefficients
+      X_original = data_for_model$X,
+      N_original = data_for_model$N,
       length_X_which = ncol(data_for_model$X),
       length_XA_which = ncol(data_for_model$XA),
       X_which = seq_len(ncol(data_for_model$X)) |> as.array(),
@@ -702,29 +770,38 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
       X_random_intercept_which = seq_len(ncol(data_for_model$X_random_intercept)) |> as.array(),
       create_intercept = FALSE
       
-    ))
+    )),
+    parallel_chains = ifelse(data_for_model$is_vb, 1, fit2$num_chains()), 
+    threads_per_chain = cores
+    
   )
+  
+  rng2_summary = 
+    summary_to_tibble(rng2, "counts", "N", "M", probs = c(CI_step_2, 0.5, 1-CI_step_2)) 
+  
+  column_quantile_names = rng2_summary |> colnames() |> str_subset("\\%") |> _[c(1,3)]
+  
+  rng2_summary = 
+    rng2_summary %>%
+    
+    # !!! THIS COMMAND RELIES ON POSITION BECAUSE IT'S NOT TRIVIAL TO MATCH
+    # !!! COLUMN NAMES BASED ON LIMITED PRECISION AND/OR PERIODICAL QUANTILES
+    rename(
+      .lower := !!as.symbol(column_quantile_names[1]) ,
+      .median = `50%`,
+      .upper := !!as.symbol(column_quantile_names[2])
+    ) %>%
+    nest(data = -N) %>%
+    mutate(!!.sample := rownames(data_for_model$y)) %>%
+    unnest(data) %>%
+    nest(data = -M) %>%
+    mutate(!!.cell_group := colnames(data_for_model$y)) %>%
+    unnest(data) 
   
   # Detect outliers
   truncation_df2 =
     .data %>%
-    left_join(
-      summary_to_tibble(rng2, "counts", "N", "M", probs = c(CI_step_2, 0.5, 1-CI_step_2)) %>%
-        
-        # !!! THIS COMMAND RELIES ON POSITION BECAUSE IT'S NOT TRIVIAL TO MATCH
-        # !!! COLUMN NAMES BASED ON LIMITED PRECISION AND/OR PERIODICAL QUANTILES
-        rename(
-          .lower := !!as.symbol(colnames(.)[7]) ,
-          .median = `50%`,
-          .upper := !!as.symbol(colnames(.)[9])
-        ) %>%
-        nest(data = -N) %>%
-        mutate(!!.sample := rownames(data_for_model$y)) %>%
-        unnest(data) %>%
-        nest(data = -M) %>%
-        mutate(!!.cell_group := colnames(data_for_model$y)) %>%
-        unnest(data) ,
-      
+    left_join(rng2_summary,
       by = c(quo_name(.sample), quo_name(.cell_group))
     ) %>%
     
@@ -769,7 +846,7 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
       stanmodels$glm_multi_beta_binomial,
       cores = cores,
       quantile = CI,
-      approximate_posterior_inference = variational_inference,
+      inference_method = inference_method,
       verbose = verbose, 
       seed = mcmc_seed,
       max_sampling_iterations = max_sampling_iterations,
@@ -876,13 +953,17 @@ sccomp_test.sccomp_tbl = function(.data,
         "c_"
       )
 
-
-  # Variability
   variability_CI =
-    get_variability_contrast_draws(.data, contrasts) |>
+    get_variability_contrast_draws(.data, contrasts)
+  
+  # Variability
+  if ("parameter" %in% colnames(variability_CI))
+  variability_CI = 
+    variability_CI |>
     draws_to_statistics(
       percent_false_positive / 100,
-      test_composition_above_logit_fold_change,!!.cell_group,
+      test_composition_above_logit_fold_change,
+      !!.cell_group,
       "v_"
     )
 
@@ -964,6 +1045,7 @@ sccomp_test.sccomp_tbl = function(.data,
     # Add class to the tbl
     add_class("sccomp_tbl") 
 }
+
 
 #' sccomp_replicate
 #'
@@ -1090,6 +1172,7 @@ sccomp_predict.sccomp_tbl = function(fit,
                                      mcmc_seed = sample(1e5, 1)){
 
 
+
   model_input = attr(fit, "model_input")
   .sample = attr(fit, ".sample")
   .cell_group = attr(fit, ".cell_group")
@@ -1180,12 +1263,12 @@ sccomp_remove_unwanted_variation <- function(.data,
   UseMethod("sccomp_remove_unwanted_variation", .data)
 }
 
+#' @importFrom readr write_file
 #' @export
 #'
 sccomp_remove_unwanted_variation.sccomp_tbl = function(.data,
                                                 formula_composition = ~1,
                                                 formula_variability = NULL){
-
 
 
   model_input = attr(.data, "model_input")
@@ -1194,7 +1277,12 @@ sccomp_remove_unwanted_variation.sccomp_tbl = function(.data,
   .grouping_for_random_intercept = attr(.data, ".grouping_for_random_intercept")
   .count = attr(.data, ".count")
 
-  fit_matrix = as.matrix(attr(.data, "fit") )
+  fit = attr(.data, "fit")
+
+  # Load model
+  mod = load_model("glm_multi_beta_binomial_generate_data")
+  
+
 
   message("sccomp says: calculating residuals")
 
@@ -1202,7 +1290,7 @@ sccomp_remove_unwanted_variation.sccomp_tbl = function(.data,
   residuals =
     .data |>
     sccomp_predict(
-      number_of_draws = min(dim(fit_matrix)[1], 500)
+      number_of_draws = attr(.data, "fit") |>  get_output_samples() |> min(500)
     ) |>
     distinct(!!.sample, !!.cell_group, proportion_mean) |>
     mutate( proportion_mean =
@@ -1221,6 +1309,7 @@ sccomp_remove_unwanted_variation.sccomp_tbl = function(.data,
 
       with_groups(!!.sample,  ~ .x |>  mutate(exposure := sum(!!.count))  ) |>
 
+
       mutate(observed_proportion =
                observed_proportion |>
                compress_zero_one() |>
@@ -1231,14 +1320,14 @@ sccomp_remove_unwanted_variation.sccomp_tbl = function(.data,
   mutate(logit_residuals = observed_proportion - proportion_mean) |>
   select(!!.sample, !!.cell_group, logit_residuals, exposure)
 
-
   message("sccomp says: regressing out unwanted factors")
+
 
   # Generate quantities
   .data |>
     sccomp_predict(
       formula_composition = formula_composition,
-      number_of_draws = min(dim(fit_matrix)[1], 500)
+      number_of_draws = attr(.data, "fit") |>  get_output_samples() |> min(500)
     ) |>
     distinct(!!.sample, !!.cell_group, proportion_mean) |>
     mutate(proportion_mean =
@@ -1596,4 +1685,30 @@ if("v_effect" %in% colnames(x) && (x |> filter(!is.na(v_effect)) |> nrow()) > 0)
 
 plots
 
+}
+
+#' Clear Stan Model Cache
+#'
+#' This function attempts to delete the Stan model cache directory and its contents.
+#' If the cache directory does not exist, it prints a message indicating this.
+#'
+#' @param cache_dir A character string representing the path of the cache directory to delete. Defaults to `sccomp_stan_models_cache_dir`.
+#' 
+#' @return NULL
+#' 
+#' @examples
+#' \dontrun{
+#'   clear_stan_model_cache("path/to/cache_dir")
+#' }
+#' @export
+clear_stan_model_cache <- function(cache_dir = sccomp_stan_models_cache_dir) {
+  
+  # Check if the directory exists
+  if (dir.exists(cache_dir)) {
+    # Attempt to delete the directory and its contents
+    unlink(cache_dir, recursive = TRUE)
+    message("Cache deleted: ", cache_dir)
+  } else {
+    message("Cache does not exist: ", cache_dir)
+  }
 }

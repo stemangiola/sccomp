@@ -8,12 +8,13 @@ sccomp_remove_outliers(
   .estimate,
   percent_false_positive = 5,
   cores = detectCores(),
-  variational_inference = TRUE,
+  inference_method = "pathfinder",
   verbose = TRUE,
   mcmc_seed = sample(1e+05, 1),
   max_sampling_iterations = 20000,
   enable_loo = FALSE,
-  approximate_posterior_inference = NULL
+  approximate_posterior_inference = NULL,
+  variational_inference = NULL
 )
 }
 \arguments{
@@ -22,8 +23,6 @@ sccomp_remove_outliers(
 \item{percent_false_positive}{A real between 0 and 100 non included. This used to identify outliers with a specific false positive rate.}
 
 \item{cores}{An integer. How many cored to be used with parallel calculations.}
-
-\item{variational_inference}{Boolean for using variational Bayes for posterior inference. It is faster and convenient. Setting this argument to FALSE runs the full Bayesian (Hamiltonian Monte Carlo) inference, slower but it is the gold standard.}
 
 \item{verbose}{A boolean. Prints progression.}
 
@@ -34,6 +33,8 @@ sccomp_remove_outliers(
 \item{enable_loo}{A boolean. Enable model comparison by the R package LOO. This is helpful when you want to compare the fit between two models, for example, analogously to ANOVA, between a one factor model versus a interceot-only model.}
 
 \item{approximate_posterior_inference}{DEPRECATED please use the \code{variational_inference} argument.}
+
+\item{variational_inference}{Boolean for using variational Bayes for posterior inference. It is faster and convenient. Setting this argument to FALSE runs the full Bayesian (Hamiltonian Monte Carlo) inference, slower but it is the gold standard.}
 }
 \value{
 A nested tibble \code{tbl}, with the following columns
